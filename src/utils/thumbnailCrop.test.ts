@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  asConfidence,
+  asPixelX,
+  asPixelY,
+  asVideoHeight,
+  asVideoWidth,
+} from './brandedTypes';
+import {
   type CropKeypoint,
   type CropOptions,
   calculatePersonCenteredCrop,
@@ -13,13 +20,28 @@ const THUMB_HEIGHT = 160;
 const VIDEO_WIDTH = 1920;
 const VIDEO_HEIGHT = 1080;
 
-function makeOptions(overrides: Partial<CropOptions> = {}): CropOptions {
+/** Helper to create keypoint with branded types */
+function kp(x: number, y: number, score: number): CropKeypoint {
+  return { x: asPixelX(x), y: asPixelY(y), score: asConfidence(score) };
+}
+
+function makeOptions(
+  overrides: Omit<Partial<CropOptions>, 'videoWidth' | 'videoHeight'> & {
+    videoWidth?: number;
+    videoHeight?: number;
+  } = {}
+): CropOptions {
+  const {
+    videoWidth = VIDEO_WIDTH,
+    videoHeight = VIDEO_HEIGHT,
+    ...rest
+  } = overrides;
   return {
     thumbWidth: THUMB_WIDTH,
     thumbHeight: THUMB_HEIGHT,
-    videoWidth: VIDEO_WIDTH,
-    videoHeight: VIDEO_HEIGHT,
-    ...overrides,
+    videoWidth: asVideoWidth(videoWidth),
+    videoHeight: asVideoHeight(videoHeight),
+    ...rest,
   };
 }
 
@@ -43,8 +65,8 @@ describe('calculatePersonCenteredCrop', () => {
   describe('with low confidence keypoints', () => {
     it('ignores keypoints below confidence threshold', () => {
       const keypoints: CropKeypoint[] = [
-        { x: 100, y: 100, score: 0.1 }, // Below threshold
-        { x: 200, y: 200, score: 0.2 }, // Below threshold
+        kp(100, 100, 0.1), // Below threshold
+        kp(200, 200, 0.2), // Below threshold
       ];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
@@ -55,22 +77,19 @@ describe('calculatePersonCenteredCrop', () => {
     });
 
     it('uses custom confidence threshold', () => {
-      const keypoints: CropKeypoint[] = [
-        { x: 500, y: 300, score: 0.5 },
-        { x: 600, y: 400, score: 0.5 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(500, 300, 0.5), kp(600, 400, 0.5)];
 
       // With high threshold, these should be ignored
       const highThreshold = calculatePersonCenteredCrop(
         keypoints,
-        makeOptions({ minConfidence: 0.8 })
+        makeOptions({ minConfidence: asConfidence(0.8) })
       );
       expect(highThreshold.cropHeight).toBeCloseTo(VIDEO_HEIGHT * 0.85, 1);
 
       // With low threshold, these should be used
       const lowThreshold = calculatePersonCenteredCrop(
         keypoints,
-        makeOptions({ minConfidence: 0.3 })
+        makeOptions({ minConfidence: asConfidence(0.3) })
       );
       // Person-centered crop should be smaller than fallback
       expect(lowThreshold.cropHeight).toBeLessThan(VIDEO_HEIGHT * 0.85);
@@ -81,10 +100,10 @@ describe('calculatePersonCenteredCrop', () => {
     it('centers crop on person bounding box', () => {
       // Person in center of frame (pixel coordinates)
       const keypoints: CropKeypoint[] = [
-        { x: 900, y: 400, score: 0.9 }, // top
-        { x: 900, y: 700, score: 0.9 }, // bottom
-        { x: 800, y: 550, score: 0.9 }, // left
-        { x: 1000, y: 550, score: 0.9 }, // right
+        kp(900, 400, 0.9), // top
+        kp(900, 700, 0.9), // bottom
+        kp(800, 550, 0.9), // left
+        kp(1000, 550, 0.9), // right
       ];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
@@ -103,10 +122,7 @@ describe('calculatePersonCenteredCrop', () => {
 
     it('handles person at left edge of frame', () => {
       // Person near left edge
-      const keypoints: CropKeypoint[] = [
-        { x: 50, y: 400, score: 0.9 },
-        { x: 150, y: 600, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(50, 400, 0.9), kp(150, 600, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
 
@@ -119,8 +135,8 @@ describe('calculatePersonCenteredCrop', () => {
     it('handles person at right edge of frame', () => {
       // Person near right edge
       const keypoints: CropKeypoint[] = [
-        { x: 1800, y: 400, score: 0.9 },
-        { x: 1900, y: 600, score: 0.9 },
+        kp(1800, 400, 0.9),
+        kp(1900, 600, 0.9),
       ];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
@@ -131,10 +147,7 @@ describe('calculatePersonCenteredCrop', () => {
 
     it('handles person at top edge of frame', () => {
       // Person near top
-      const keypoints: CropKeypoint[] = [
-        { x: 960, y: 50, score: 0.9 },
-        { x: 960, y: 150, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(960, 50, 0.9), kp(960, 150, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
 
@@ -143,10 +156,7 @@ describe('calculatePersonCenteredCrop', () => {
 
     it('handles person at bottom edge of frame', () => {
       // Person near bottom
-      const keypoints: CropKeypoint[] = [
-        { x: 960, y: 950, score: 0.9 },
-        { x: 960, y: 1050, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(960, 950, 0.9), kp(960, 1050, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
 
@@ -157,10 +167,7 @@ describe('calculatePersonCenteredCrop', () => {
   describe('aspect ratio preservation', () => {
     it('maintains target aspect ratio for tall person', () => {
       // Tall thin person
-      const keypoints: CropKeypoint[] = [
-        { x: 950, y: 200, score: 0.9 },
-        { x: 970, y: 800, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(950, 200, 0.9), kp(970, 800, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
 
@@ -172,10 +179,10 @@ describe('calculatePersonCenteredCrop', () => {
     it('maintains target aspect ratio for wide person', () => {
       // Wide pose (arms stretched)
       const keypoints: CropKeypoint[] = [
-        { x: 600, y: 500, score: 0.9 },
-        { x: 1300, y: 500, score: 0.9 },
-        { x: 950, y: 400, score: 0.9 },
-        { x: 950, y: 600, score: 0.9 },
+        kp(600, 500, 0.9),
+        kp(1300, 500, 0.9),
+        kp(950, 400, 0.9),
+        kp(950, 600, 0.9),
       ];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
@@ -189,10 +196,7 @@ describe('calculatePersonCenteredCrop', () => {
   describe('minimum crop size', () => {
     it('enforces minimum crop height for small person', () => {
       // Very small person (far from camera)
-      const keypoints: CropKeypoint[] = [
-        { x: 960, y: 500, score: 0.9 },
-        { x: 980, y: 520, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(960, 500, 0.9), kp(980, 520, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
 
@@ -201,10 +205,7 @@ describe('calculatePersonCenteredCrop', () => {
     });
 
     it('uses custom minimum crop height fraction', () => {
-      const keypoints: CropKeypoint[] = [
-        { x: 960, y: 500, score: 0.9 },
-        { x: 980, y: 520, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(960, 500, 0.9), kp(980, 520, 0.9)];
 
       const result = calculatePersonCenteredCrop(
         keypoints,
@@ -223,7 +224,7 @@ describe('calculatePersonCenteredCrop', () => {
         videoHeight: 1000,
       });
 
-      const keypoints: CropKeypoint[] = [{ x: 250, y: 500, score: 0.9 }];
+      const keypoints: CropKeypoint[] = [kp(250, 500, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, options);
 
@@ -238,7 +239,7 @@ describe('calculatePersonCenteredCrop', () => {
       // This test ensures we don't accidentally multiply by video dimensions
       // BlazePose keypoints are already in pixel coordinates
       const keypoints: CropKeypoint[] = [
-        { x: 960, y: 540, score: 0.9 }, // Center of 1920x1080 video
+        kp(960, 540, 0.9), // Center of 1920x1080 video
       ];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
@@ -254,10 +255,7 @@ describe('calculatePersonCenteredCrop', () => {
 
     it('handles keypoints at exact pixel positions', () => {
       // Specific pixel positions that would be wrong if multiplied
-      const keypoints: CropKeypoint[] = [
-        { x: 100, y: 100, score: 0.9 },
-        { x: 200, y: 200, score: 0.9 },
-      ];
+      const keypoints: CropKeypoint[] = [kp(100, 100, 0.9), kp(200, 200, 0.9)];
 
       const result = calculatePersonCenteredCrop(keypoints, makeOptions());
 

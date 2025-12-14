@@ -43,6 +43,7 @@ import type { CropRegion } from '../types/posetrack';
 import {
   asMetersPerSecond,
   asVideoHeight,
+  asVideoWidth,
   DEFAULT_VIDEO_HEIGHT,
   type MetersPerSecond,
   type VideoHeight,
@@ -791,8 +792,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
               const crop = calculateStableCropRegion(
                 sampleFrames,
-                videoWidth,
-                videoHeight
+                asVideoWidth(videoWidth),
+                asVideoHeight(videoHeight)
               );
               setCropRegionState(crop);
               if (crop && pipelineRef.current) {

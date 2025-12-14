@@ -5,22 +5,32 @@
  * PoseExtractor (extraction-time thumbnail capture).
  */
 
+import {
+  asPixelX,
+  asPixelY,
+  type Confidence,
+  type PixelX,
+  type PixelY,
+  type VideoHeight,
+  type VideoWidth,
+} from './brandedTypes';
+
 /**
  * Keypoint with position and optional confidence score.
  * BlazePose keypoints are in pixel coordinates (not normalized).
  */
 export interface CropKeypoint {
-  x: number;
-  y: number;
-  score?: number;
+  x: PixelX;
+  y: PixelY;
+  score?: Confidence;
 }
 
 /**
  * Crop region in pixel coordinates
  */
 export interface ThumbnailCropRegion {
-  cropX: number;
-  cropY: number;
+  cropX: PixelX;
+  cropY: PixelY;
   cropWidth: number;
   cropHeight: number;
 }
@@ -34,11 +44,11 @@ export interface CropOptions {
   /** Target thumbnail height */
   thumbHeight: number;
   /** Video/source width in pixels */
-  videoWidth: number;
+  videoWidth: VideoWidth;
   /** Video/source height in pixels */
-  videoHeight: number;
+  videoHeight: VideoHeight;
   /** Minimum confidence score for keypoints (default: 0.3) */
-  minConfidence?: number;
+  minConfidence?: Confidence;
   /** Horizontal padding multiplier (default: 1.4 = 40% padding) */
   widthPadding?: number;
   /** Vertical padding multiplier (default: 1.3 = 30% padding) */
@@ -149,13 +159,14 @@ export function calculatePersonCenteredCrop(
   }
 
   // Center crop on person, but clamp to video bounds
-  const cropX = Math.max(
-    0,
-    Math.min(personCenterX - cropWidth / 2, videoWidth - cropWidth)
+  const cropX = asPixelX(
+    Math.max(0, Math.min(personCenterX - cropWidth / 2, videoWidth - cropWidth))
   );
-  const cropY = Math.max(
-    0,
-    Math.min(personCenterY - cropHeight / 2, videoHeight - cropHeight)
+  const cropY = asPixelY(
+    Math.max(
+      0,
+      Math.min(personCenterY - cropHeight / 2, videoHeight - cropHeight)
+    )
   );
 
   return { cropX, cropY, cropWidth, cropHeight };
