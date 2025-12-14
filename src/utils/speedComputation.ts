@@ -9,6 +9,13 @@
 
 import { buildSkeletonFromFrame } from '../pipeline/PipelineFactory';
 import type { PoseTrackFrame } from '../types/posetrack';
+import {
+  asSeconds,
+  DEFAULT_USER_HEIGHT_CM,
+  type HeightCm,
+  type MetersPerSecond,
+  type Seconds,
+} from './brandedTypes';
 
 /**
  * Configuration for speed computation
@@ -17,7 +24,7 @@ export interface SpeedComputationConfig {
   /** Number of frames for smoothing window (should be odd) */
   windowSize?: number;
   /** User height in cm for pixel-to-meter calibration */
-  userHeightCm?: number;
+  userHeightCm?: HeightCm;
   /** Which wrist to track */
   preferredSide?: 'left' | 'right';
   /** Smoothing method: 'median' preserves peaks, 'mean' smoother */
@@ -26,7 +33,7 @@ export interface SpeedComputationConfig {
 
 const DEFAULT_CONFIG: Required<SpeedComputationConfig> = {
   windowSize: 3, // Small window preserves responsiveness
-  userHeightCm: 173,
+  userHeightCm: DEFAULT_USER_HEIGHT_CM,
   preferredSide: 'right',
   smoothingMethod: 'median', // Median preserves peaks at direction changes
 };
@@ -39,8 +46,10 @@ const DEFAULT_CONFIG: Required<SpeedComputationConfig> = {
 function computeRawSpeeds(
   frames: PoseTrackFrame[],
   config: Required<SpeedComputationConfig>
-): (number | null)[] {
-  const speeds: (number | null)[] = new Array(frames.length).fill(null);
+): (MetersPerSecond | null)[] {
+  const speeds: (MetersPerSecond | null)[] = new Array(frames.length).fill(
+    null
+  );
 
   if (frames.length < 2) return speeds;
 
@@ -63,12 +72,13 @@ function computeRawSpeeds(
       continue;
     }
 
-    const dt = frames[i].videoTime - frames[i - 1].videoTime;
-    if (dt <= 0 || dt > 0.5) {
+    const dtRaw = frames[i].videoTime - frames[i - 1].videoTime;
+    if (dtRaw <= 0 || dtRaw > 0.5) {
       // Invalid time delta
       speeds[i] = null;
       continue;
     }
+    const dt: Seconds = asSeconds(dtRaw);
 
     const speed = currSkeleton.getWristVelocityFromPrev(
       prevSkeleton,
@@ -100,7 +110,7 @@ function median(values: number[]): number {
  * - 'mean': Smoother but can dilute peaks
  */
 function smoothSpeeds(
-  rawSpeeds: (number | null)[],
+  rawSpeeds: (MetersPerSecond | null)[],
   windowSize: number,
   method: 'median' | 'mean' = 'median'
 ): number[] {

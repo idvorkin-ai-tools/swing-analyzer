@@ -11,31 +11,31 @@
  */
 
 import type { PoseKeypoint } from '../types';
+import {
+  asDepthPercent,
+  asNormalizedY,
+  asPixelY,
+  DEFAULT_VIDEO_HEIGHT,
+  type DepthPercent,
+  type NormalizedY,
+  normalizeY,
+  type PixelY,
+  type VideoHeight,
+} from './brandedTypes';
 
-// ============================================
-// Branded Types for Coordinate Safety
-// ============================================
-
-/** Y coordinate in pixels (0 = top of frame) */
-export type PixelY = number & { readonly __brand: 'PixelY' };
-
-/** Y coordinate normalized to 0-1 (0 = top, 1 = bottom) */
-export type NormalizedY = number & { readonly __brand: 'NormalizedY' };
-
-/** Depth percentage 0-100 (0 = standing, 100 = full squat) */
-export type DepthPercent = number & { readonly __brand: 'DepthPercent' };
-
-/** Video height in pixels */
-export type VideoHeight = number & { readonly __brand: 'VideoHeight' };
-
-// Type constructors for explicit conversion
-export const asPixelY = (value: number): PixelY => value as PixelY;
-export const asNormalizedY = (value: number): NormalizedY =>
-  value as NormalizedY;
-export const asDepthPercent = (value: number): DepthPercent =>
-  value as DepthPercent;
-export const asVideoHeight = (value: number): VideoHeight =>
-  value as VideoHeight;
+// Re-export branded types for backwards compatibility
+export {
+  asDepthPercent,
+  asNormalizedY,
+  asPixelY,
+  asVideoHeight,
+  DEFAULT_VIDEO_HEIGHT,
+  type DepthPercent,
+  type NormalizedY,
+  normalizeY,
+  type PixelY,
+  type VideoHeight,
+} from './brandedTypes';
 
 // ============================================
 // Constants
@@ -45,10 +45,6 @@ export const asVideoHeight = (value: number): VideoHeight =>
 const LEFT_EAR = 7;
 const RIGHT_EAR = 8;
 const NOSE = 0;
-
-// Default video height for normalization when not provided
-// Most videos are 1080p
-export const DEFAULT_VIDEO_HEIGHT: VideoHeight = asVideoHeight(1080);
 
 // ============================================
 // Core Functions
@@ -76,20 +72,6 @@ export function getEarYPixels(keypoints: PoseKeypoint[]): PixelY {
   // Fallback to nose if ears not available
   // Return a typical standing position (about 20% down from top)
   return asPixelY(nose?.y ?? DEFAULT_VIDEO_HEIGHT * 0.2);
-}
-
-/**
- * Normalize pixel Y to 0-1 range.
- *
- * @param pixelY Y position in pixels
- * @param videoHeight Video height in pixels
- * @returns Normalized Y position (0-1)
- */
-export function normalizeY(
-  pixelY: PixelY,
-  videoHeight: VideoHeight
-): NormalizedY {
-  return asNormalizedY(pixelY / videoHeight);
 }
 
 /**

@@ -332,3 +332,22 @@ export function HelpIcon() {
     </svg>
   );
 }
+
+export function RulerIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21.3 15.3a2.4 2.4 0 010 3.4l-2.6 2.6a2.4 2.4 0 01-3.4 0L2.7 8.7a2.41 2.41 0 010-3.4l2.6-2.6a2.41 2.41 0 013.4 0z" />
+      <path d="M14.5 12.5L11 9M18 16l-3.5-3.5M9.5 7.5l-2 2M5.5 11.5l-2 2" />
+    </svg>
+  );
+}

@@ -1,4 +1,11 @@
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
+import {
+  asMetersPerSecond,
+  DEFAULT_USER_HEIGHT_CM,
+  type HeightCm,
+  type MetersPerSecond,
+  type Seconds,
+} from '../utils/brandedTypes';
 
 /**
  * Represents a skeleton constructed from keypoints
@@ -842,10 +849,10 @@ export class Skeleton {
    */
   getWristVelocityFromPrev(
     previousSkeleton: Skeleton,
-    dt: number,
-    userHeightCm: number = 173,
+    dt: Seconds,
+    userHeightCm: HeightCm = DEFAULT_USER_HEIGHT_CM,
     preferredSide: 'left' | 'right' = 'right'
-  ): number | null {
+  ): MetersPerSecond | null {
     if (dt <= 0) {
       return null;
     }
@@ -900,7 +907,7 @@ export class Skeleton {
     const vy = dyMeters / dt;
     const speed = Math.sqrt(vx * vx + vy * vy);
 
-    return speed;
+    return asMetersPerSecond(speed);
   }
 
   /**

@@ -41,16 +41,18 @@ import type { AppState } from '../types';
 import type { PositionCandidate } from '../types/exercise';
 import type { CropRegion } from '../types/posetrack';
 import {
+  asMetersPerSecond,
+  asVideoHeight,
+  DEFAULT_VIDEO_HEIGHT,
+  type MetersPerSecond,
+  type VideoHeight,
+} from '../utils/brandedTypes';
+import {
   buildCheckpointList,
   findNextCheckpoint,
   findPreviousCheckpoint,
 } from '../utils/checkpointUtils';
-import {
-  asVideoHeight,
-  calculateDepthFromKeypoints,
-  DEFAULT_VIDEO_HEIGHT,
-  type VideoHeight,
-} from '../utils/depthCalculation';
+import { calculateDepthFromKeypoints } from '../utils/depthCalculation';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
@@ -166,7 +168,9 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const [repCount, setRepCount] = useState<number>(0);
   const [spineAngle, setSpineAngle] = useState<number>(0);
   const [armToSpineAngle, setArmToSpineAngle] = useState<number>(0);
-  const [wristVelocity, setWristVelocity] = useState<number>(0);
+  const [wristVelocity, setWristVelocity] = useState<MetersPerSecond>(
+    asMetersPerSecond(0)
+  );
   // Generic angles map for dynamic HUD rendering (exercise-specific)
   const [currentAngles, setCurrentAngles] = useState<Record<string, number>>(
     {}
@@ -560,7 +564,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       setSpineAngle(spine);
       setArmToSpineAngle(arm);
       if (precomputedSpeed !== undefined) {
-        setWristVelocity(precomputedSpeed);
+        setWristVelocity(asMetersPerSecond(precomputedSpeed));
       }
 
       // Update generic angles map for dynamic HUD rendering
