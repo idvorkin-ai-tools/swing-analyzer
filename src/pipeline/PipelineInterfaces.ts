@@ -1,6 +1,7 @@
 import type { Observable } from 'rxjs';
 import type { Skeleton } from '../models/Skeleton';
 import type { SwingPositionName } from '../types';
+import type { PrecomputedAngles } from '../types/posetrack';
 import type { PoseEvent } from './PoseSkeletonTransformer';
 
 /**
@@ -69,6 +70,8 @@ export interface SkeletonTransformer {
 export interface SkeletonEvent {
   skeleton: Skeleton | null;
   poseEvent: PoseEvent;
+  /** Precomputed angles from pose track (optional, for cached data) */
+  precomputedAngles?: PrecomputedAngles;
 }
 
 /**

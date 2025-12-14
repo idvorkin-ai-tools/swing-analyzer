@@ -1,4 +1,11 @@
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
+import {
+  asMetersPerSecond,
+  DEFAULT_USER_HEIGHT_CM,
+  type HeightCm,
+  type MetersPerSecond,
+  type Seconds,
+} from '../utils/brandedTypes';
 
 /**
  * Represents a skeleton constructed from keypoints
@@ -828,6 +835,79 @@ export class Skeleton {
       this._wristHeightCache.set(cacheKey, 0);
       return 0;
     }
+  }
+
+  /**
+   * Calculate linear wrist velocity between this skeleton and a previous one.
+   * Uses video time delta provided externally (more reliable than skeleton timestamps).
+   *
+   * @param previousSkeleton - The skeleton from the previous frame
+   * @param dt - Time delta in seconds between the two frames
+   * @param userHeightCm - User's height in cm (for pixel-to-meter calibration)
+   * @param preferredSide - Which wrist to track ('left' or 'right')
+   * @returns Speed in m/s, or null if cannot calculate
+   */
+  getWristVelocityFromPrev(
+    previousSkeleton: Skeleton,
+    dt: Seconds,
+    userHeightCm: HeightCm = DEFAULT_USER_HEIGHT_CM,
+    preferredSide: 'left' | 'right' = 'right'
+  ): MetersPerSecond | null {
+    if (dt <= 0) {
+      return null;
+    }
+
+    // Get wrist keypoints
+    const wristName = preferredSide === 'left' ? 'leftWrist' : 'rightWrist';
+    const currWrist = this.getKeypointByName(wristName);
+    const prevWrist = previousSkeleton.getKeypointByName(wristName);
+
+    if (!currWrist || !prevWrist) {
+      return null;
+    }
+
+    // Check confidence
+    const currConf = currWrist.score ?? currWrist.visibility ?? 0;
+    const prevConf = prevWrist.score ?? prevWrist.visibility ?? 0;
+    if (currConf < 0.3 || prevConf < 0.3) {
+      return null;
+    }
+
+    // Calculate pixel displacement
+    const dx = currWrist.x - prevWrist.x;
+    const dy = currWrist.y - prevWrist.y;
+
+    // Calculate scale factor from user height using skeleton height
+    const ankle =
+      this.getKeypointByName('leftAnkle') ||
+      this.getKeypointByName('rightAnkle');
+    const nose = this.getKeypointByName('nose');
+
+    let pixelsPerMeter = 640 / (userHeightCm / 100); // Default estimate
+
+    if (ankle && nose) {
+      const ankleConf = ankle.score ?? ankle.visibility ?? 0;
+      const noseConf = nose.score ?? nose.visibility ?? 0;
+      if (ankleConf > 0.3 && noseConf > 0.3) {
+        // Nose to ankle is roughly 90% of total height
+        const skeletonHeightPixels = Math.abs(ankle.y - nose.y);
+        if (skeletonHeightPixels > 100) {
+          const estimatedFullHeightPixels = skeletonHeightPixels / 0.9;
+          pixelsPerMeter = estimatedFullHeightPixels / (userHeightCm / 100);
+        }
+      }
+    }
+
+    // Convert to meters
+    const dxMeters = dx / pixelsPerMeter;
+    const dyMeters = dy / pixelsPerMeter;
+
+    // Calculate speed (meters per second)
+    const vx = dxMeters / dt;
+    const vy = dyMeters / dt;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+
+    return asMetersPerSecond(speed);
   }
 
   /**

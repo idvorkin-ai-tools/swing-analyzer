@@ -12,8 +12,8 @@
  * 5. Auto-detection of exercise type from movement patterns
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DetectedExercise, RepPosition } from '../analyzers';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DetectedExercise, HudConfig, RepPosition } from '../analyzers';
 import {
   getSampleVideos,
   type SampleVideo,
@@ -41,10 +41,18 @@ import type { AppState } from '../types';
 import type { PositionCandidate } from '../types/exercise';
 import type { CropRegion } from '../types/posetrack';
 import {
+  asMetersPerSecond,
+  asVideoHeight,
+  DEFAULT_VIDEO_HEIGHT,
+  type MetersPerSecond,
+  type VideoHeight,
+} from '../utils/brandedTypes';
+import {
   buildCheckpointList,
   findNextCheckpoint,
   findPreviousCheckpoint,
 } from '../utils/checkpointUtils';
+import { calculateDepthFromKeypoints } from '../utils/depthCalculation';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
@@ -160,6 +168,13 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const [repCount, setRepCount] = useState<number>(0);
   const [spineAngle, setSpineAngle] = useState<number>(0);
   const [armToSpineAngle, setArmToSpineAngle] = useState<number>(0);
+  const [wristVelocity, setWristVelocity] = useState<MetersPerSecond>(
+    asMetersPerSecond(0)
+  );
+  // Generic angles map for dynamic HUD rendering (exercise-specific)
+  const [currentAngles, setCurrentAngles] = useState<Record<string, number>>(
+    {}
+  );
   const [repThumbnails, setRepThumbnails] = useState<
     Map<number, Map<string, PositionCandidate>>
   >(new Map());
@@ -538,30 +553,74 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // HUD Update Helper
   // ========================================
   // Updates HUD display from a skeleton (called during playback and seek)
-  const updateHudFromSkeleton = useCallback((skeleton: Skeleton) => {
-    setSpineAngle(Math.round(skeleton.getSpineAngle() || 0));
-    setArmToSpineAngle(Math.round(skeleton.getArmToVerticalAngle() || 0));
+  // Uses precomputed speed (smoothed, computed in one-time pass after pose extraction)
+  const updateHudFromSkeleton = useCallback(
+    (skeleton: Skeleton, _videoTime?: number, precomputedSpeed?: number) => {
+      const spine = Math.round(skeleton.getSpineAngle() || 0);
+      const arm = Math.round(skeleton.getArmToVerticalAngle() || 0);
+      const speed = precomputedSpeed ?? 0;
 
-    // Estimate position from spine angle (stateless, for HUD display during seek)
-    // Position thresholds based on spine angle:
-    //   top: ~10° (upright), connect: ~45°, release: ~37°, bottom: ~75° (hinged)
-    const spine = skeleton.getSpineAngle() || 0;
-    let position: string | null = null;
+      // Update legacy individual state (for backwards compatibility)
+      setSpineAngle(spine);
+      setArmToSpineAngle(arm);
+      if (precomputedSpeed !== undefined) {
+        setWristVelocity(asMetersPerSecond(precomputedSpeed));
+      }
 
-    if (spine < 25) {
-      position = 'Top';
-    } else if (spine >= 25 && spine < 41) {
-      position = 'Release'; // ~37° ideal
-    } else if (spine >= 41 && spine < 60) {
-      position = 'Connect'; // ~45° ideal
-    } else if (spine >= 60) {
-      position = 'Bottom'; // ~75° ideal
-    }
+      // Update generic angles map for dynamic HUD rendering
+      // Include all angles that any exercise might need
+      const leftKnee = skeleton.getKneeAngleForSide('left') || 180;
+      const rightKnee = skeleton.getKneeAngleForSide('right') || 180;
+      // Use the more bent knee (lower angle = deeper squat)
+      const workingKnee = Math.min(leftKnee, rightKnee);
+      const leftHip = skeleton.getHipAngleForSide('left') || 180;
+      const rightHip = skeleton.getHipAngleForSide('right') || 180;
+      // Use the more bent hip
+      const workingHip = Math.min(leftHip, rightHip);
 
-    if (position) {
-      setStatus(position);
-    }
-  }, []);
+      // Depth percentage using ear Y position (more accurate than knee angle)
+      // Use actual video height for proper coordinate normalization
+      const videoHeight: VideoHeight = videoRef.current?.videoHeight
+        ? asVideoHeight(videoRef.current.videoHeight)
+        : DEFAULT_VIDEO_HEIGHT;
+      const depth = calculateDepthFromKeypoints(
+        skeleton.getKeypoints(),
+        videoHeight
+      );
+
+      const angles: Record<string, number> = {
+        // Kettlebell swing metrics
+        spineAngle: spine,
+        armAngle: arm,
+        speed,
+        // Pistol squat metrics - use working leg (more bent)
+        kneeAngle: Math.round(workingKnee),
+        hipAngle: Math.round(workingHip),
+        depth,
+      };
+      setCurrentAngles(angles);
+
+      // Estimate position from spine angle (stateless, for HUD display during seek)
+      // Position thresholds based on spine angle:
+      //   top: ~10° (upright), connect: ~45°, release: ~37°, bottom: ~75° (hinged)
+      let position: string | null = null;
+
+      if (spine < 25) {
+        position = 'Top';
+      } else if (spine >= 25 && spine < 41) {
+        position = 'Release'; // ~37° ideal
+      } else if (spine >= 41 && spine < 60) {
+        position = 'Connect'; // ~45° ideal
+      } else if (spine >= 60) {
+        position = 'Bottom'; // ~75° ideal
+      }
+
+      if (position) {
+        setStatus(position);
+      }
+    },
+    []
+  );
 
   // ========================================
   // Skeleton Event Handler
@@ -748,7 +807,11 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             const hasPoses = !!skeletonEvent?.skeleton;
             setHasPosesForCurrentFrame(hasPoses);
             if (skeletonEvent?.skeleton) {
-              updateHudFromSkeleton(skeletonEvent.skeleton);
+              updateHudFromSkeleton(
+                skeletonEvent.skeleton,
+                video.currentTime,
+                skeletonEvent.precomputedAngles?.wristSpeed
+              );
               // Also render skeleton on canvas
               if (skeletonRendererRef.current) {
                 skeletonRendererRef.current.renderSkeleton(
@@ -909,8 +972,12 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
               now
             );
           }
-          // Update HUD with current frame's data
-          updateHudFromSkeleton(skeletonEvent.skeleton);
+          // Update HUD with current frame's data (uses precomputed speed)
+          updateHudFromSkeleton(
+            skeletonEvent.skeleton,
+            metadata.mediaTime,
+            skeletonEvent.precomputedAngles?.wristSpeed
+          );
         }
 
         // Throttled rep/position sync (every REP_SYNC_INTERVAL_MS)
@@ -981,8 +1048,12 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             performance.now()
           );
         }
-        // Update HUD with current frame's data
-        updateHudFromSkeleton(skeletonEvent.skeleton);
+        // Update HUD with current frame's data (uses precomputed speed)
+        updateHudFromSkeleton(
+          skeletonEvent.skeleton,
+          video.currentTime,
+          skeletonEvent.precomputedAngles?.wristSpeed
+        );
       }
 
       // Sync rep counter and position to seek location (immediate, not throttled)
@@ -1601,6 +1672,23 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     inputState.type === 'video-file' &&
     inputState.sourceState.type === 'extracting';
 
+  // HUD configuration from the current form analyzer (changes when exercise type changes)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: detectedExercise triggers re-fetch of HUD config when exercise changes
+  const hudConfig = useMemo((): HudConfig => {
+    const formAnalyzer = pipelineRef.current?.getFormAnalyzer();
+    if (formAnalyzer) {
+      return formAnalyzer.getHudConfig();
+    }
+    // Default config (kettlebell swing) when no analyzer available
+    return {
+      metrics: [
+        { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+        { key: 'armAngle', label: 'ARM', unit: '°', decimals: 0 },
+        { key: 'speed', label: 'SPEED', unit: 'm/s', decimals: 1 },
+      ],
+    };
+  }, [detectedExercise]);
+
   // ========================================
   // Return Public API (compatible with V1)
   // ========================================
@@ -1611,6 +1699,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     repCount,
     spineAngle,
     armToSpineAngle,
+    wristVelocity,
     isPlaying,
     videoStartTime: null, // Not tracked in V2
     isFullscreen,
@@ -1689,5 +1778,9 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     isVideoLoading,
     videoLoadProgress,
     videoLoadMessage,
+
+    // Dynamic HUD configuration
+    hudConfig,
+    currentAngles,
   };
 }

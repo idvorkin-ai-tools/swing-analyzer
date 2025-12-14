@@ -44,9 +44,9 @@ const VideoSectionV2: React.FC = () => {
     isCropEnabled,
     toggleCrop,
     isLandscape,
-    // HUD data
-    spineAngle,
-    armToSpineAngle,
+    // HUD data - dynamic configuration based on exercise type
+    hudConfig,
+    currentAngles,
     // HUD visibility (based on pose availability, not extraction state)
     hasPosesForCurrentFrame,
     currentPosition,
@@ -357,7 +357,15 @@ const VideoSectionV2: React.FC = () => {
             {/* Status overlay - visible when poses exist for current frame */}
             {hasPosesForCurrentFrame && (
               <div className="hud-overlay-top">
-                <div className="hud-overlay-reps">
+                {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: Tap to open gallery is supplementary, keyboard nav via gallery button */}
+                <div
+                  className="hud-overlay-reps hud-overlay-reps--clickable"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (repCount > 0) setShowGallery(true);
+                  }}
+                  title="Tap to open rep gallery"
+                >
                   <span id="rep-counter" className="hud-overlay-reps-value">
                     {repCount > 0
                       ? `${appState.currentRepIndex + 1}/${repCount}`
@@ -366,18 +374,31 @@ const VideoSectionV2: React.FC = () => {
                   <span className="hud-overlay-reps-label">REP</span>
                 </div>
                 <div className="hud-overlay-angles">
-                  <div className="hud-overlay-angle">
-                    <span className="hud-overlay-angle-label">SPINE</span>
-                    <span id="spine-angle" className="hud-overlay-angle-value">
-                      {spineAngle}°
-                    </span>
-                  </div>
-                  <div className="hud-overlay-angle">
-                    <span className="hud-overlay-angle-label">ARM</span>
-                    <span id="arm-angle" className="hud-overlay-angle-value">
-                      {armToSpineAngle}°
-                    </span>
-                  </div>
+                  {hudConfig.metrics.map((metric) => {
+                    const value = currentAngles[metric.key] ?? 0;
+                    const formattedValue =
+                      metric.decimals !== undefined
+                        ? value.toFixed(metric.decimals)
+                        : Math.round(value);
+                    return (
+                      <div key={metric.key} className="hud-overlay-angle">
+                        <span className="hud-overlay-angle-label">
+                          {metric.label}
+                        </span>
+                        <span
+                          id={`hud-${metric.key}`}
+                          className="hud-overlay-angle-value"
+                        >
+                          {formattedValue}
+                          {metric.unit && (
+                            <span className="hud-overlay-unit">
+                              {metric.unit}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                   {currentPosition && (
                     <div className="hud-overlay-angle hud-overlay-position">
                       <span className="hud-overlay-angle-label">POS</span>

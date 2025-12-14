@@ -60,8 +60,8 @@ test.describe('User Journey: Load and Analyze Sample Video', () => {
       // New design: HUD is only visible when poses exist for current frame
       // Before loading a video, the HUD should be hidden
       await expect(page.locator('#rep-counter')).not.toBeVisible();
-      await expect(page.locator('#spine-angle')).not.toBeVisible();
-      await expect(page.locator('#arm-angle')).not.toBeVisible();
+      await expect(page.locator('#hud-spineAngle')).not.toBeVisible();
+      await expect(page.locator('#hud-armAngle')).not.toBeVisible();
     });
   });
 
@@ -271,15 +271,17 @@ test.describe('User Journey: Load and Analyze Sample Video', () => {
       );
 
       // Wait for HUD to be visible (poses exist for frame 0)
-      await expect(page.locator('#spine-angle')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('#hud-spineAngle')).toBeVisible({
+        timeout: 5000,
+      });
 
       // Start playback
       await page.click('#play-pause-btn');
       await page.waitForTimeout(500);
 
       // Angle displays should still be visible during playback
-      await expect(page.locator('#spine-angle')).toBeVisible();
-      await expect(page.locator('#arm-angle')).toBeVisible();
+      await expect(page.locator('#hud-spineAngle')).toBeVisible();
+      await expect(page.locator('#hud-armAngle')).toBeVisible();
     });
 
     test('rep counter increments after completing swing cycle', async ({
@@ -565,7 +567,7 @@ test.describe('User Journey: Load and Analyze Sample Video', () => {
 
       // Get spine angle at 25%
       const angleAt25 = await page.evaluate(() => {
-        const el = document.querySelector('#spine-angle');
+        const el = document.querySelector('#hud-spineAngle');
         return el?.textContent || '0°';
       });
 
@@ -575,7 +577,7 @@ test.describe('User Journey: Load and Analyze Sample Video', () => {
 
       // Get spine angle at 75%
       const angleAt75 = await page.evaluate(() => {
-        const el = document.querySelector('#spine-angle');
+        const el = document.querySelector('#hud-spineAngle');
         return el?.textContent || '0°';
       });
 

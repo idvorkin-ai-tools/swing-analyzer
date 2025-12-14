@@ -12,6 +12,28 @@
 import type { Skeleton } from '../models/Skeleton';
 
 /**
+ * Configuration for a single HUD metric field
+ */
+export interface HudMetricConfig {
+  /** Unique key for this metric (used to look up value in angles) */
+  key: string;
+  /** Display label shown in HUD */
+  label: string;
+  /** Unit to display after value (e.g., '°', 'm/s', '%') */
+  unit: string;
+  /** Number of decimal places to display */
+  decimals?: number;
+}
+
+/**
+ * HUD configuration returned by exercises to control display
+ */
+export interface HudConfig {
+  /** Metrics to display in the HUD (in order) */
+  metrics: HudMetricConfig[];
+}
+
+/**
  * A position captured at its peak during a rep.
  * Used for filmstrip thumbnails and form analysis.
  */
@@ -115,4 +137,10 @@ export interface FormAnalyzer {
 
   /** Get the working side for exercises that support it (e.g., pistol squat left/right leg) */
   getWorkingLeg?(): 'left' | 'right' | null;
+
+  /**
+   * Get HUD configuration for this exercise.
+   * Defines what metrics to display and how to format them.
+   */
+  getHudConfig(): HudConfig;
 }

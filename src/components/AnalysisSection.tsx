@@ -3,7 +3,7 @@ import { useSwingAnalyzerContext } from '../contexts/ExerciseAnalyzerContext';
 import './AnalysisSection.css';
 
 const AnalysisSection: React.FC = () => {
-  const { status, repCount, spineAngle, armToSpineAngle } =
+  const { status, repCount, spineAngle, armToSpineAngle, wristVelocity } =
     useSwingAnalyzerContext();
 
   return (
@@ -34,6 +34,13 @@ const AnalysisSection: React.FC = () => {
             <div className="hud-gauge-value" id="arm-angle">
               {armToSpineAngle}
               <span className="hud-gauge-unit">°</span>
+            </div>
+          </div>
+          <div className="hud-gauge">
+            <div className="hud-gauge-label">SPEED</div>
+            <div className="hud-gauge-value" id="wrist-velocity">
+              {wristVelocity.toFixed(1)}
+              <span className="hud-gauge-unit">m/s</span>
             </div>
           </div>
         </div>

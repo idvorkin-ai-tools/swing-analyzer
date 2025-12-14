@@ -8,12 +8,52 @@ import {
 } from '../../services/PoseTrackService';
 import { sessionRecorder } from '../../services/SessionRecorder';
 import type { DisplayMode } from '../../types';
-import { DatabaseIcon, DownloadIcon, MonitorIcon, SparklesIcon } from './Icons';
+import {
+  asHeightCm,
+  DEFAULT_USER_HEIGHT_CM,
+  type HeightCm,
+} from '../../utils/brandedTypes';
+import {
+  DatabaseIcon,
+  DownloadIcon,
+  MonitorIcon,
+  RulerIcon,
+  SparklesIcon,
+} from './Icons';
 import { SegmentedControl } from './SegmentedControl';
 import { Toggle } from './Toggle';
 
 // Storage key for BlazePose variant
 const BLAZEPOSE_VARIANT_KEY = 'swing-analyzer-blazepose-variant';
+
+// Storage key for user height (in cm)
+const USER_HEIGHT_KEY = 'swing-analyzer-user-height';
+
+// Get saved user height (with error handling for private browsing/quota issues)
+export function getSavedUserHeight(): HeightCm {
+  try {
+    const saved = localStorage.getItem(USER_HEIGHT_KEY);
+    if (saved) {
+      const height = parseFloat(saved);
+      if (!isNaN(height) && height > 100 && height < 250) {
+        return asHeightCm(height);
+      }
+    }
+    return DEFAULT_USER_HEIGHT_CM;
+  } catch (error) {
+    console.warn('Failed to read user height from localStorage:', error);
+    return DEFAULT_USER_HEIGHT_CM;
+  }
+}
+
+// Save user height (with error handling for private browsing/quota issues)
+function saveUserHeight(heightCm: HeightCm): void {
+  try {
+    localStorage.setItem(USER_HEIGHT_KEY, heightCm.toString());
+  } catch (error) {
+    console.error('Failed to save user height:', error);
+  }
+}
 
 // Get saved BlazePose variant (with error handling for private browsing/quota issues)
 export function getSavedBlazePoseVariant(): BlazePoseVariant {
@@ -48,6 +88,19 @@ const BLAZEPOSE_OPTIONS: { value: BlazePoseVariant; label: string }[] = [
   { value: 'heavy', label: 'Heavy' },
 ];
 
+// Height preset options (common heights in imperial and metric)
+// Using HeightCm branded type for type safety
+const HEIGHT_OPTIONS: { value: HeightCm; label: string }[] = [
+  { value: asHeightCm(157), label: '5\'2"' },
+  { value: asHeightCm(163), label: '5\'4"' },
+  { value: asHeightCm(168), label: '5\'6"' },
+  { value: asHeightCm(173), label: '5\'8"' },
+  { value: asHeightCm(178), label: '5\'10"' },
+  { value: asHeightCm(183), label: '6\'0"' },
+  { value: asHeightCm(188), label: '6\'2"' },
+  { value: asHeightCm(193), label: '6\'4"' },
+];
+
 export function SettingsTab() {
   const { appState, setDisplayMode } = useSwingAnalyzerContext();
   const [blazePoseVariant, setBlazePoseVariant] = useState<BlazePoseVariant>(
@@ -57,6 +110,7 @@ export function SettingsTab() {
     () => getPoseTrackStorageMode() === 'indexeddb'
   );
   const [needsReload, setNeedsReload] = useState(false);
+  const [userHeight, setUserHeight] = useState<HeightCm>(getSavedUserHeight());
 
   // Developer section state
   const [recordingStats, setRecordingStats] = useState(
@@ -137,6 +191,11 @@ export function SettingsTab() {
     setPoseTrackStorageMode(newEnabled ? 'indexeddb' : 'memory');
   };
 
+  const handleHeightChange = (height: HeightCm) => {
+    setUserHeight(height);
+    saveUserHeight(height);
+  };
+
   const [isClearing, setIsClearing] = useState(false);
   const [clearSuccess, setClearSuccess] = useState(false);
   const [clearError, setClearError] = useState(false);
@@ -174,6 +233,30 @@ export function SettingsTab() {
           onChange={setDisplayMode}
           name="display-mode"
         />
+      </div>
+
+      {/* User Height (for velocity calibration) */}
+      <div className="settings-compact-row">
+        <div className="settings-compact-label">
+          <div className="settings-compact-icon settings-compact-icon--purple">
+            <RulerIcon />
+          </div>
+          <span>Height</span>
+        </div>
+        <select
+          className="settings-select"
+          value={userHeight}
+          onChange={(e) =>
+            handleHeightChange(asHeightCm(Number(e.target.value)))
+          }
+          aria-label="User height for velocity calibration"
+        >
+          {HEIGHT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* BlazePose Variant */}

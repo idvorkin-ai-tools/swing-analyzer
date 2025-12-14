@@ -538,6 +538,16 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
     return ['bottom', 'release', 'top', 'connect'];
   }
 
+  getHudConfig() {
+    return {
+      metrics: [
+        { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+        { key: 'armAngle', label: 'ARM', unit: '°', decimals: 0 },
+        { key: 'speed', label: 'SPEED', unit: 'm/s', decimals: 1 },
+      ],
+    };
+  }
+
   /**
    * Reset exercise-specific state
    */

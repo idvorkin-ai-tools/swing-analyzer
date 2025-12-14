@@ -117,8 +117,8 @@ test.describe('Touch Double-Tap Zones', () => {
       await page.click('button[aria-label="Open settings"]');
       await page.locator('.settings-tab', { hasText: 'Help' }).click();
 
-      // Should show tip about checkpoints
-      await expect(page.locator('.settings-help-note')).toContainText(
+      // Should show tip about checkpoints (first note; second is about Rep Gallery)
+      await expect(page.locator('.settings-help-note').first()).toContainText(
         'Checkpoints are the key positions'
       );
     });

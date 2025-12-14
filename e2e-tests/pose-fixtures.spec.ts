@@ -60,7 +60,7 @@ test.describe('Pose Track Fixtures', () => {
     test('HUD is hidden before poses exist', async ({ page }) => {
       // New design: HUD is only visible when poses exist for current frame
       await expect(page.locator('#rep-counter')).not.toBeVisible();
-      await expect(page.locator('#spine-angle')).not.toBeVisible();
+      await expect(page.locator('#hud-spineAngle')).not.toBeVisible();
     });
   });
 
@@ -250,7 +250,7 @@ test.describe('Pose Track Fixtures', () => {
       await expect(page.locator('#rep-counter')).toBeVisible({
         timeout: 10000,
       });
-      await expect(page.locator('#spine-angle')).toBeVisible();
+      await expect(page.locator('#hud-spineAngle')).toBeVisible();
     });
   });
 });
