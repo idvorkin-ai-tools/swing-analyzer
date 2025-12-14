@@ -605,6 +605,18 @@ main {
   border: 1px solid var(--hud-border);
 }
 
+.hud-overlay-reps--clickable {
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.hud-overlay-reps--clickable:hover {
+  background: rgba(0, 0, 0, 0.6);
+  border-color: var(--hud-accent);
+}
+
 .hud-overlay-reps-value {
   font-family: var(--font-mono);
   font-size: 1.75rem;

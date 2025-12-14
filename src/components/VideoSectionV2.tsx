@@ -357,7 +357,12 @@ const VideoSectionV2: React.FC = () => {
             {/* Status overlay - visible when poses exist for current frame */}
             {hasPosesForCurrentFrame && (
               <div className="hud-overlay-top">
-                <div className="hud-overlay-reps">
+                {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: Tap to open gallery is supplementary, keyboard nav via gallery button */}
+                <div
+                  className="hud-overlay-reps hud-overlay-reps--clickable"
+                  onClick={() => repCount > 0 && setShowGallery(true)}
+                  title="Tap to open rep gallery"
+                >
                   <span id="rep-counter" className="hud-overlay-reps-value">
                     {repCount > 0
                       ? `${appState.currentRepIndex + 1}/${repCount}`

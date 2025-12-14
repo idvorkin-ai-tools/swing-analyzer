@@ -51,10 +51,15 @@ export function HelpTab() {
         </div>
       </div>
 
-      {/* Tip */}
+      {/* Tips */}
       <div className="settings-help-note">
         <strong>Tip:</strong> Checkpoints are the key positions in each rep
         (Top, Connect, Bottom, Release).
+      </div>
+
+      <div className="settings-help-note">
+        <strong>Rep Gallery:</strong> Tap the rep counter in the HUD to open the
+        rep gallery for side-by-side comparison.
       </div>
     </div>
   );
