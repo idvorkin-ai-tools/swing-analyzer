@@ -26,6 +26,8 @@ export {
 export type {
   FormAnalyzer,
   FormAnalyzerResult,
+  HudConfig,
+  HudMetricConfig,
   RepPosition,
   RepQuality,
 } from './FormAnalyzer';

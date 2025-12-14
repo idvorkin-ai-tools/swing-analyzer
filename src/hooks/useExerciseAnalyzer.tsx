@@ -12,8 +12,8 @@
  * 5. Auto-detection of exercise type from movement patterns
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DetectedExercise, RepPosition } from '../analyzers';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DetectedExercise, HudConfig, RepPosition } from '../analyzers';
 import {
   getSampleVideos,
   type SampleVideo,
@@ -161,6 +161,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const [spineAngle, setSpineAngle] = useState<number>(0);
   const [armToSpineAngle, setArmToSpineAngle] = useState<number>(0);
   const [wristVelocity, setWristVelocity] = useState<number>(0);
+  // Generic angles map for dynamic HUD rendering (exercise-specific)
+  const [currentAngles, setCurrentAngles] = useState<Record<string, number>>(
+    {}
+  );
   const [repThumbnails, setRepThumbnails] = useState<
     Map<number, Map<string, PositionCandidate>>
   >(new Map());
@@ -542,18 +546,42 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // Uses precomputed speed (smoothed, computed in one-time pass after pose extraction)
   const updateHudFromSkeleton = useCallback(
     (skeleton: Skeleton, _videoTime?: number, precomputedSpeed?: number) => {
-      setSpineAngle(Math.round(skeleton.getSpineAngle() || 0));
-      setArmToSpineAngle(Math.round(skeleton.getArmToVerticalAngle() || 0));
+      const spine = Math.round(skeleton.getSpineAngle() || 0);
+      const arm = Math.round(skeleton.getArmToVerticalAngle() || 0);
+      const speed = precomputedSpeed ?? 0;
 
-      // Use precomputed speed (smoothed, computed during pose loading)
+      // Update legacy individual state (for backwards compatibility)
+      setSpineAngle(spine);
+      setArmToSpineAngle(arm);
       if (precomputedSpeed !== undefined) {
         setWristVelocity(precomputedSpeed);
       }
 
+      // Update generic angles map for dynamic HUD rendering
+      // Include all angles that any exercise might need
+      const angles: Record<string, number> = {
+        // Kettlebell swing metrics
+        spineAngle: spine,
+        armAngle: arm,
+        speed,
+        // Pistol squat metrics - use average of both legs or prefer visible side
+        kneeAngle: Math.round(
+          skeleton.getKneeAngleForSide('left') ||
+            skeleton.getKneeAngleForSide('right') ||
+            0
+        ),
+        hipAngle: Math.round(
+          skeleton.getHipAngleForSide('left') ||
+            skeleton.getHipAngleForSide('right') ||
+            0
+        ),
+        depth: 0, // TODO: Calculate depth percentage for pistol squat
+      };
+      setCurrentAngles(angles);
+
       // Estimate position from spine angle (stateless, for HUD display during seek)
       // Position thresholds based on spine angle:
       //   top: ~10° (upright), connect: ~45°, release: ~37°, bottom: ~75° (hinged)
-      const spine = skeleton.getSpineAngle() || 0;
       let position: string | null = null;
 
       if (spine < 25) {
@@ -1623,6 +1651,23 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     inputState.type === 'video-file' &&
     inputState.sourceState.type === 'extracting';
 
+  // HUD configuration from the current form analyzer (changes when exercise type changes)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: detectedExercise triggers re-fetch of HUD config when exercise changes
+  const hudConfig = useMemo((): HudConfig => {
+    const formAnalyzer = pipelineRef.current?.getFormAnalyzer();
+    if (formAnalyzer) {
+      return formAnalyzer.getHudConfig();
+    }
+    // Default config (kettlebell swing) when no analyzer available
+    return {
+      metrics: [
+        { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+        { key: 'armAngle', label: 'ARM', unit: '°', decimals: 0 },
+        { key: 'speed', label: 'SPEED', unit: 'm/s', decimals: 1 },
+      ],
+    };
+  }, [detectedExercise]);
+
   // ========================================
   // Return Public API (compatible with V1)
   // ========================================
@@ -1712,5 +1757,9 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     isVideoLoading,
     videoLoadProgress,
     videoLoadMessage,
+
+    // Dynamic HUD configuration
+    hudConfig,
+    currentAngles,
   };
 }

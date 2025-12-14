@@ -64,6 +64,15 @@ const createMockContext = (overrides = {}): any => ({
   currentPhases: ['bottom', 'release', 'top', 'connect'],
   // Working leg (for pistol squats)
   workingLeg: null,
+  // Dynamic HUD configuration
+  hudConfig: {
+    metrics: [
+      { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+      { key: 'armAngle', label: 'ARM', unit: '°', decimals: 0 },
+      { key: 'speed', label: 'SPEED', unit: 'm/s', decimals: 1 },
+    ],
+  },
+  currentAngles: { spineAngle: 0, armAngle: 0, speed: 0 },
   ...overrides,
 });
 
@@ -169,15 +178,30 @@ describe('VideoSectionV2', () => {
         createMockContext({
           currentVideoFile: new File([], 'test.mp4'),
           hasPosesForCurrentFrame: true,
-          spineAngle: 45,
-          armToSpineAngle: 120,
+          currentAngles: { spineAngle: 45, armAngle: 120, speed: 2.5 },
+          hudConfig: {
+            metrics: [
+              { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+              { key: 'armAngle', label: 'ARM', unit: '°', decimals: 0 },
+              { key: 'speed', label: 'SPEED', unit: 'm/s', decimals: 1 },
+            ],
+          },
           repCount: 2,
           appState: { isModelLoaded: true, currentRepIndex: 0 },
         })
       );
       render(<VideoSectionV2 />);
-      expect(screen.getByText('45°')).toBeInTheDocument();
-      expect(screen.getByText('120°')).toBeInTheDocument();
+      // Check for labels
+      expect(screen.getByText('SPINE')).toBeInTheDocument();
+      expect(screen.getByText('ARM')).toBeInTheDocument();
+      expect(screen.getByText('SPEED')).toBeInTheDocument();
+      // Check for values in the HUD element (value and unit are separate elements)
+      expect(document.getElementById('hud-spineAngle')?.textContent).toContain(
+        '45'
+      );
+      expect(document.getElementById('hud-armAngle')?.textContent).toContain(
+        '120'
+      );
       expect(screen.getByText('1/2')).toBeInTheDocument();
     });
 
@@ -187,6 +211,12 @@ describe('VideoSectionV2', () => {
           currentVideoFile: new File([], 'test.mp4'),
           hasPosesForCurrentFrame: true,
           currentPosition: 'bottom',
+          hudConfig: {
+            metrics: [
+              { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+            ],
+          },
+          currentAngles: { spineAngle: 0 },
         })
       );
       render(<VideoSectionV2 />);
@@ -428,6 +458,12 @@ describe('VideoSectionV2', () => {
           repCount: 2,
           hasPosesForCurrentFrame: true,
           currentPosition: 'connect',
+          hudConfig: {
+            metrics: [
+              { key: 'spineAngle', label: 'SPINE', unit: '°', decimals: 0 },
+            ],
+          },
+          currentAngles: { spineAngle: 0 },
         })
       );
       render(<VideoSectionV2 />);
