@@ -3,65 +3,150 @@
  *
  * Uses ear Y position (head height) which is more stable than knee angles.
  * Higher ear Y = lower physical position (image coordinates: 0 = top).
+ *
+ * TYPE SAFETY: Uses branded types to prevent mixing pixel and normalized coordinates.
+ * - PixelY: Raw pixel coordinates from BlazePose (e.g., 450 pixels)
+ * - NormalizedY: Normalized to 0-1 range (e.g., 0.42)
+ * - DepthPercent: Depth percentage 0-100
  */
 
 import type { PoseKeypoint } from '../types';
+
+// ============================================
+// Branded Types for Coordinate Safety
+// ============================================
+
+/** Y coordinate in pixels (0 = top of frame) */
+export type PixelY = number & { readonly __brand: 'PixelY' };
+
+/** Y coordinate normalized to 0-1 (0 = top, 1 = bottom) */
+export type NormalizedY = number & { readonly __brand: 'NormalizedY' };
+
+/** Depth percentage 0-100 (0 = standing, 100 = full squat) */
+export type DepthPercent = number & { readonly __brand: 'DepthPercent' };
+
+/** Video height in pixels */
+export type VideoHeight = number & { readonly __brand: 'VideoHeight' };
+
+// Type constructors for explicit conversion
+export const asPixelY = (value: number): PixelY => value as PixelY;
+export const asNormalizedY = (value: number): NormalizedY =>
+  value as NormalizedY;
+export const asDepthPercent = (value: number): DepthPercent =>
+  value as DepthPercent;
+export const asVideoHeight = (value: number): VideoHeight =>
+  value as VideoHeight;
+
+// ============================================
+// Constants
+// ============================================
 
 // MediaPipe keypoint indices
 const LEFT_EAR = 7;
 const RIGHT_EAR = 8;
 const NOSE = 0;
 
+// Default video height for normalization when not provided
+// Most videos are 1080p
+export const DEFAULT_VIDEO_HEIGHT: VideoHeight = asVideoHeight(1080);
+
+// ============================================
+// Core Functions
+// ============================================
+
 /**
- * Get average ear Y position from keypoints.
+ * Get average ear Y position from keypoints (in pixels).
  * Falls back to nose if ears not available.
  *
  * @param keypoints Array of keypoints from skeleton
- * @returns Y position (0 = top of frame, 1 = bottom)
+ * @returns Y position in pixels (0 = top of frame)
  */
-export function getEarY(keypoints: PoseKeypoint[]): number {
+export function getEarYPixels(keypoints: PoseKeypoint[]): PixelY {
   const leftEar = keypoints[LEFT_EAR];
   const rightEar = keypoints[RIGHT_EAR];
   const nose = keypoints[NOSE];
 
   if (leftEar && rightEar) {
-    return (leftEar.y + rightEar.y) / 2;
+    return asPixelY((leftEar.y + rightEar.y) / 2);
   } else if (leftEar) {
-    return leftEar.y;
+    return asPixelY(leftEar.y);
   } else if (rightEar) {
-    return rightEar.y;
+    return asPixelY(rightEar.y);
   }
   // Fallback to nose if ears not available
-  return nose?.y ?? 0.2;
+  // Return a typical standing position (about 20% down from top)
+  return asPixelY(nose?.y ?? DEFAULT_VIDEO_HEIGHT * 0.2);
 }
 
 /**
- * Calculate depth percentage from ear Y position.
+ * Normalize pixel Y to 0-1 range.
  *
- * Standing position: earY ~0.15-0.25 (person tall, head near top)
- * Deep squat: earY ~0.5-0.7 (person low, head near middle/bottom)
+ * @param pixelY Y position in pixels
+ * @param videoHeight Video height in pixels
+ * @returns Normalized Y position (0-1)
+ */
+export function normalizeY(
+  pixelY: PixelY,
+  videoHeight: VideoHeight
+): NormalizedY {
+  return asNormalizedY(pixelY / videoHeight);
+}
+
+/**
+ * Calculate depth percentage from normalized ear Y position.
  *
- * @param earY Ear Y position (0-1 normalized)
+ * Standing position: normalizedEarY ~0.15-0.25 (person tall, head near top)
+ * Deep squat: normalizedEarY ~0.5-0.7 (person low, head near middle/bottom)
+ *
+ * @param normalizedEarY Ear Y position normalized to 0-1
  * @returns Depth percentage (0-100), clamped
  */
-export function calculateDepthFromEarY(earY: number): number {
-  // Convert ear Y to depth percentage
+export function calculateDepthFromNormalizedY(
+  normalizedEarY: NormalizedY
+): DepthPercent {
+  // Convert normalized ear Y to depth percentage
   // ~0.15 = 0% (standing), ~0.65 = 100% (full squat)
   const STANDING_EAR_Y = 0.15;
-  const SQUAT_RANGE = 0.5; // earY travel from standing to full squat
+  const SQUAT_RANGE = 0.5; // normalized earY travel from standing to full squat
 
-  const depthRaw = ((earY - STANDING_EAR_Y) / SQUAT_RANGE) * 100;
-  return Math.max(0, Math.min(100, Math.round(depthRaw)));
+  const depthRaw = ((normalizedEarY - STANDING_EAR_Y) / SQUAT_RANGE) * 100;
+  return asDepthPercent(Math.max(0, Math.min(100, Math.round(depthRaw))));
 }
 
 /**
  * Calculate depth percentage directly from keypoints.
- * Convenience function combining getEarY and calculateDepthFromEarY.
+ * Normalizes pixel coordinates using videoHeight before calculating depth.
  *
- * @param keypoints Array of keypoints from skeleton
+ * @param keypoints Array of keypoints from skeleton (pixel coordinates)
+ * @param videoHeight Video height in pixels for normalization (defaults to 1080)
  * @returns Depth percentage (0-100)
  */
-export function calculateDepthFromKeypoints(keypoints: PoseKeypoint[]): number {
-  const earY = getEarY(keypoints);
-  return calculateDepthFromEarY(earY);
+export function calculateDepthFromKeypoints(
+  keypoints: PoseKeypoint[],
+  videoHeight: VideoHeight = DEFAULT_VIDEO_HEIGHT
+): DepthPercent {
+  const earYPixels = getEarYPixels(keypoints);
+  const normalizedEarY = normalizeY(earYPixels, videoHeight);
+  return calculateDepthFromNormalizedY(normalizedEarY);
+}
+
+// ============================================
+// Legacy Compatibility (for existing tests)
+// ============================================
+
+/**
+ * @deprecated Use getEarYPixels instead for type safety
+ * Get average ear Y position from keypoints.
+ */
+export function getEarY(keypoints: PoseKeypoint[]): number {
+  return getEarYPixels(keypoints);
+}
+
+/**
+ * @deprecated Use calculateDepthFromNormalizedY instead for type safety
+ * Calculate depth percentage from ear Y position.
+ * IMPORTANT: Expects NORMALIZED ear Y (0-1), not pixels!
+ */
+export function calculateDepthFromEarY(normalizedEarY: number): number {
+  return calculateDepthFromNormalizedY(asNormalizedY(normalizedEarY));
 }

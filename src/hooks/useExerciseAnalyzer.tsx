@@ -45,7 +45,12 @@ import {
   findNextCheckpoint,
   findPreviousCheckpoint,
 } from '../utils/checkpointUtils';
-import { calculateDepthFromKeypoints } from '../utils/depthCalculation';
+import {
+  asVideoHeight,
+  calculateDepthFromKeypoints,
+  DEFAULT_VIDEO_HEIGHT,
+  type VideoHeight,
+} from '../utils/depthCalculation';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
@@ -570,7 +575,14 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       const workingHip = Math.min(leftHip, rightHip);
 
       // Depth percentage using ear Y position (more accurate than knee angle)
-      const depth = calculateDepthFromKeypoints(skeleton.getKeypoints());
+      // Use actual video height for proper coordinate normalization
+      const videoHeight: VideoHeight = videoRef.current?.videoHeight
+        ? asVideoHeight(videoRef.current.videoHeight)
+        : DEFAULT_VIDEO_HEIGHT;
+      const depth = calculateDepthFromKeypoints(
+        skeleton.getKeypoints(),
+        videoHeight
+      );
 
       const angles: Record<string, number> = {
         // Kettlebell swing metrics

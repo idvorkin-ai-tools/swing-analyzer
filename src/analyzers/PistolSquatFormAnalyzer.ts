@@ -19,6 +19,15 @@
 
 import type { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts } from '../types';
+import {
+  asPixelY,
+  calculateDepthFromNormalizedY,
+  DEFAULT_VIDEO_HEIGHT,
+  type DepthPercent,
+  normalizeY,
+  type PixelY,
+  type VideoHeight,
+} from '../utils/depthCalculation';
 import type {
   FormAnalyzerResult,
   RepPosition,
@@ -53,6 +62,9 @@ export interface PistolSquatThresholds {
 
   // Posture validation (reject horizontal/lying poses)
   maxValidSpineAngle: number; // Reject frames with spine angle above this (person lying down)
+
+  // Video dimensions for coordinate normalization
+  videoHeight: VideoHeight; // Video height in pixels (default 1080)
 }
 
 /**
@@ -66,6 +78,7 @@ const DEFAULT_THRESHOLDS: PistolSquatThresholds = {
   descendingKneeThreshold: 140, // Start descending when knee < 140°
   ascendingKneeThreshold: 90, // Start ascending when knee > 90°
   maxValidSpineAngle: 60, // ~60° = reject horizontal/lying poses (>60° is not upright)
+  videoHeight: DEFAULT_VIDEO_HEIGHT, // 1080p default
 };
 
 /**
@@ -212,24 +225,34 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
   }
 
   /**
-   * Get the average ear Y position from a skeleton.
+   * Get the average ear Y position from a skeleton in pixels.
    * Higher Y = lower physical position (image coordinates).
+   * Returns PixelY branded type for type safety.
    */
-  private getEarY(skeleton: Skeleton): number {
+  private getEarY(skeleton: Skeleton): PixelY {
     const keypoints = skeleton.getKeypoints();
     const leftEar = keypoints[MediaPipeBodyParts.LEFT_EAR];
     const rightEar = keypoints[MediaPipeBodyParts.RIGHT_EAR];
 
     if (leftEar && rightEar) {
-      return (leftEar.y + rightEar.y) / 2;
+      return asPixelY((leftEar.y + rightEar.y) / 2);
     } else if (leftEar) {
-      return leftEar.y;
+      return asPixelY(leftEar.y);
     } else if (rightEar) {
-      return rightEar.y;
+      return asPixelY(rightEar.y);
     }
     // Fallback: use nose if ears not available
     const nose = keypoints[MediaPipeBodyParts.NOSE];
-    return nose?.y ?? 0;
+    return asPixelY(nose?.y ?? 0);
+  }
+
+  /**
+   * Calculate depth percentage from ear Y pixel position.
+   * Normalizes using video height before calculating depth.
+   */
+  private calculateDepth(earYPixels: PixelY): DepthPercent {
+    const normalizedEarY = normalizeY(earYPixels, this.thresholds.videoHeight);
+    return calculateDepthFromNormalizedY(normalizedEarY);
   }
 
   /**
@@ -265,6 +288,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     // Get all angles and ear position
     const allAngles = this.getAngles(skeleton);
     const earY = this.getEarY(skeleton);
+    const depth = this.calculateDepth(earY);
     const angles: PistolSquatAngles = {
       workingKnee: allAngles.workingKnee,
       workingHip: allAngles.workingHip,
@@ -280,7 +304,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
         phase: this.phase,
         repCompleted: false,
         repCount: this.repCount,
-        angles: { ...angles } as Record<string, number>,
+        angles: { ...angles, depth } as Record<string, number>,
       };
     }
 
@@ -373,7 +397,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       repCount: this.repCount,
       repPositions,
       repQuality,
-      angles: { ...angles } as Record<string, number>,
+      angles: { ...angles, depth } as Record<string, number>,
     };
   }
 
