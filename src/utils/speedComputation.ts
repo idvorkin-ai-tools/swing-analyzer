@@ -2,7 +2,9 @@
  * Speed Computation Utilities
  *
  * Computes smoothed wrist speeds from pose track frames in a single pass.
- * Uses a centered moving average for smooth, stable speed values.
+ * Uses median smoothing to preserve peaks while removing noise.
+ * Median is better than mean for speed because it handles direction
+ * changes (where speed drops to 0 briefly) without diluting peak speeds.
  */
 
 import { buildSkeletonFromFrame } from '../pipeline/PipelineFactory';
@@ -12,18 +14,21 @@ import type { PoseTrackFrame } from '../types/posetrack';
  * Configuration for speed computation
  */
 export interface SpeedComputationConfig {
-  /** Number of frames to average over (should be odd for centered average) */
+  /** Number of frames for smoothing window (should be odd) */
   windowSize?: number;
   /** User height in cm for pixel-to-meter calibration */
   userHeightCm?: number;
   /** Which wrist to track */
   preferredSide?: 'left' | 'right';
+  /** Smoothing method: 'median' preserves peaks, 'mean' smoother */
+  smoothingMethod?: 'median' | 'mean';
 }
 
 const DEFAULT_CONFIG: Required<SpeedComputationConfig> = {
-  windowSize: 5,
+  windowSize: 3, // Small window preserves responsiveness
   userHeightCm: 173,
   preferredSide: 'right',
+  smoothingMethod: 'median', // Median preserves peaks at direction changes
 };
 
 /**
@@ -78,12 +83,26 @@ function computeRawSpeeds(
 }
 
 /**
- * Apply centered moving average smoothing to speed values.
- * Handles null values by excluding them from the average.
+ * Get median of an array of numbers
+ */
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/**
+ * Apply smoothing to speed values.
+ * - 'median': Preserves peaks, robust to outliers (direction changes)
+ * - 'mean': Smoother but can dilute peaks
  */
 function smoothSpeeds(
   rawSpeeds: (number | null)[],
-  windowSize: number
+  windowSize: number,
+  method: 'median' | 'mean' = 'median'
 ): number[] {
   const smoothed: number[] = new Array(rawSpeeds.length).fill(0);
   const halfWindow = Math.floor(windowSize / 2);
@@ -92,18 +111,23 @@ function smoothSpeeds(
     const windowStart = Math.max(0, i - halfWindow);
     const windowEnd = Math.min(rawSpeeds.length - 1, i + halfWindow);
 
-    let sum = 0;
-    let count = 0;
-
+    const windowValues: number[] = [];
     for (let j = windowStart; j <= windowEnd; j++) {
       const speed = rawSpeeds[j];
       if (speed !== null) {
-        sum += speed;
-        count++;
+        windowValues.push(speed);
       }
     }
 
-    smoothed[i] = count > 0 ? sum / count : 0;
+    if (windowValues.length === 0) {
+      smoothed[i] = 0;
+    } else if (method === 'median') {
+      smoothed[i] = median(windowValues);
+    } else {
+      // mean
+      smoothed[i] =
+        windowValues.reduce((a, b) => a + b, 0) / windowValues.length;
+    }
   }
 
   return smoothed;
@@ -126,8 +150,12 @@ export function computeFrameSpeeds(
   // Compute raw speeds
   const rawSpeeds = computeRawSpeeds(frames, fullConfig);
 
-  // Apply smoothing
-  const smoothedSpeeds = smoothSpeeds(rawSpeeds, fullConfig.windowSize);
+  // Apply smoothing (median preserves peaks at direction changes)
+  const smoothedSpeeds = smoothSpeeds(
+    rawSpeeds,
+    fullConfig.windowSize,
+    fullConfig.smoothingMethod
+  );
 
   // Populate frames with smoothed speeds
   for (let i = 0; i < frames.length; i++) {
