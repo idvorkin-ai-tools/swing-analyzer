@@ -212,16 +212,17 @@ Actions requiring explicit "YES" approval from user:
 
 **Encouraged** (not losing work): Deleting unused functions/files, removing commented-out code, cleaning unused imports - these are preserved in git history.
 
-**End of session**: When user signals done or says "workflow review":
+## Retros
 
-1. Review session for patterns: repeated corrections, friction, missing context
-2. Create `.claude/workflow-recommendations/YYYY-MM-DD-HHMMSS-XXXX.md` (XXXX = random 4 chars)
-3. Ask user if they want to merge any immediately into CLAUDE.md
-4. For generalizable patterns, offer to PR to chop-conventions
+Run retros weekly (or when user says "retro") to review human-AI collaboration patterns. Also triggered at end of session when user says "workflow review".
 
-## Weekly Retros
+**What goes in a retro:**
 
-Run retros weekly (or when user says "retro") to review human-AI collaboration patterns.
+- Usage metrics (messages, sessions, tool calls)
+- What went well (features, PRs, process wins)
+- Friction patterns (corrections, rework, confusion)
+- Workflow recommendations (patterns discovered → fixes applied)
+- Action items for next period
 
 **Storage:** `.claude/retros/` in project root
 
@@ -258,7 +259,8 @@ done
 1. **Summary Metrics** - Messages, sessions, commits per instance
 2. **What Went Well** - Features delivered, PRs merged, process wins
 3. **What Didn't Go Well** - Friction patterns, rework, confusion
-4. **Action Items** - Process improvements, docs updates, tech debt
+4. **Workflow Recommendations** - Patterns discovered this period (Pattern → Recommendation → Status)
+5. **Action Items** - Process improvements, docs updates, tech debt
 
 **Multi-instance projects:** Retros cover ALL instances (swing-2 through swing-7) since they share the same codebase. Store retro in primary working clone.
 
