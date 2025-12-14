@@ -434,7 +434,7 @@ gh api repos/idvorkin/swing-analyzer/pulls/PR_NUMBER/comments \
 
 Run weekly (or when user says "retro"). See [chop-conventions/dev-inner-loop/retros.md](https://github.com/idvorkin/chop-conventions/blob/main/dev-inner-loop/retros.md).
 
-**Storage:** `.claude/retros/`
+**Storage:** `retros/`
 
 ---
 
