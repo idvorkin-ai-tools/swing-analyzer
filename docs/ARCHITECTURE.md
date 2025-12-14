@@ -104,8 +104,9 @@ Data processing orchestration. This is where frames become analysis results.
 | `Pipeline.ts`                      | Main orchestrator - combines frame + skeleton + analysis |
 | `InputSession.ts`                  | State machine for input lifecycle                        |
 | `VideoFileSkeletonSource.ts`       | Extracts skeletons from video files                      |
+| `LivePoseCache.ts`                 | Streaming cache for concurrent extraction/playback       |
 | `PoseSkeletonTransformer.ts`       | Converts ML poses → Skeleton objects                     |
-| `CachedPoseSkeletonTransformer.ts` | Uses pre-extracted poses                                 |
+| `CachedPoseSkeletonTransformer.ts` | Uses pre-extracted poses (from cache)                    |
 | `PipelineFactory.ts`               | Creates pipeline instances                               |
 | `KeypointAdapter.ts`               | Validates MediaPipe BlazePose-33 keypoint format         |
 
@@ -134,10 +135,21 @@ UI updates
 
 Exercise-specific form analysis. **This is the plugin system.**
 
-| Module                           | Purpose                      |
-| -------------------------------- | ---------------------------- |
-| `FormAnalyzer.ts`                | Interface definition         |
-| `KettlebellSwingFormAnalyzer.ts` | Swing-specific state machine |
+| Module                           | Purpose                                  |
+| -------------------------------- | ---------------------------------------- |
+| `FormAnalyzer.ts`                | Interface definition                     |
+| `FormAnalyzerBase.ts`            | Abstract base class with common logic    |
+| `ExerciseRegistry.ts`            | Plugin registry for all exercises        |
+| `ExerciseDetector.ts`            | Auto-detects exercise type from movement |
+| `KettlebellSwingFormAnalyzer.ts` | Swing-specific state machine             |
+| `PistolSquatFormAnalyzer.ts`     | Pistol squat state machine               |
+
+**Registered exercises:**
+
+| Exercise         | Analyzer                      | Phases                                     |
+| ---------------- | ----------------------------- | ------------------------------------------ |
+| Kettlebell Swing | `KettlebellSwingFormAnalyzer` | top → connect → bottom → release           |
+| Pistol Squat     | `PistolSquatFormAnalyzer`     | standing → descending → bottom → ascending |
 
 **FormAnalyzer interface:**
 
@@ -155,6 +167,7 @@ interface FormAnalyzer {
   reset(): void;
   getExerciseName(): string;
   getPhases(): string[];
+  getWorkingLeg?(): 'left' | 'right' | null; // For side-specific exercises
 }
 
 interface FormAnalyzerResult {
@@ -169,17 +182,22 @@ interface FormAnalyzerResult {
 
 **Adding a new exercise:**
 
-1. Create `src/analyzers/YourExerciseFormAnalyzer.ts`
-2. Implement `FormAnalyzer` interface
-3. Define phases (e.g., top, bottom for pull-ups)
-4. Implement state machine transitions
-5. Define rep completion criteria
+1. Create `src/analyzers/YourExerciseFormAnalyzer.ts` extending `FormAnalyzerBase`
+2. Define phases and implement state machine transitions
+3. Add to `DetectedExercise` type in `ExerciseDetector.ts`
+4. Register in `EXERCISE_REGISTRY` in `ExerciseRegistry.ts`
+5. Add detection logic to `ExerciseDetector` (optional - for auto-detection)
 
 ### 5. Biomechanics Layer (`src/models/`)
 
-The `Skeleton` class - domain model for human pose.
+Domain models for human pose and movement analysis.
 
-**Key responsibilities:**
+| Module                    | Purpose                                      |
+| ------------------------- | -------------------------------------------- |
+| `Skeleton.ts`             | Pose model with angle calculations           |
+| `BiomechanicsAnalyzer.ts` | Temporal analysis, quality scoring, coaching |
+
+**Skeleton - key responsibilities:**
 
 - Store keypoints from ML detection
 - Calculate angles (spine, hip, knee, arm)
@@ -196,10 +214,18 @@ skeleton.getWristHeight(); // For phase detection
 skeleton.getFacingDirection(); // Left or right
 ```
 
+**BiomechanicsAnalyzer - temporal analysis:**
+
+- Frame buffer for smoothed angles (exponential moving average)
+- Angular velocity calculations
+- Quality scoring (hinge, power, consistency, lockout, depth)
+- Auto-generated coaching cues
+
 **Where to add biomechanics:**
 
 - New angle calculations → add method to `Skeleton`
 - New keypoint queries → add method to `Skeleton`
+- Temporal/smoothed analysis → add to `BiomechanicsAnalyzer`
 - Exercise-specific thresholds → keep in analyzer, not here
 
 ### 6. Infrastructure Layer (`src/services/`)
@@ -269,9 +295,10 @@ Exercises are modeled as state machines with phases:
 
 ```
 Kettlebell Swing: top → connect → bottom → release → top (1 rep)
+Pistol Squat:     standing → descending → bottom → ascending → standing (1 rep)
 ```
 
-The `FormAnalyzer` tracks current phase and detects transitions based on skeleton angles.
+The `FormAnalyzer` tracks current phase and detects transitions based on skeleton angles. Exercise type is auto-detected by `ExerciseDetector` during extraction.
 
 ### Processing Modes
 
@@ -293,11 +320,11 @@ Both modes use the same `Pipeline` and `FormAnalyzer` - only the source differs.
 
 ### Adding New Exercises
 
-1. Create `src/analyzers/NewExerciseFormAnalyzer.ts`
-2. Define phases and transitions
-3. Implement rep counting logic
-4. Wire up in `PipelineFactory`
-5. Add UI for exercise selection
+1. Create `src/analyzers/NewExerciseFormAnalyzer.ts` extending `FormAnalyzerBase`
+2. Define phases and implement state machine transitions
+3. Add to `DetectedExercise` type in `ExerciseDetector.ts`
+4. Register in `EXERCISE_REGISTRY` in `ExerciseRegistry.ts`
+5. Add detection logic to `ExerciseDetector` (for auto-detection)
 
 ### Adding New Analysis Metrics
 
