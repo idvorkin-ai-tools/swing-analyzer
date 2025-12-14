@@ -10,6 +10,12 @@
  */
 
 import type { Skeleton } from '../models/Skeleton';
+import type {
+  QualityScore,
+  RepCount,
+  TimestampMs,
+  VideoTimeSeconds,
+} from '../utils/brandedTypes';
 
 /**
  * Configuration for a single HUD metric field
@@ -43,13 +49,13 @@ export interface RepPosition {
   /** The skeleton captured at this position's peak */
   skeleton: Skeleton;
   /** Timestamp when peak occurred (performance.now()) */
-  timestamp: number;
+  timestamp: TimestampMs;
   /** Video time in seconds (if available) */
-  videoTime?: number;
+  videoTime?: VideoTimeSeconds;
   /** Angle values at the peak */
   angles: Record<string, number>;
   /** Quality score for this position (higher = better) */
-  score: number;
+  score: QualityScore;
   /** Frame thumbnail for filmstrip display (only available during extraction) */
   frameImage?: ImageData;
 }
@@ -59,7 +65,7 @@ export interface RepPosition {
  */
 export interface RepQuality {
   /** Overall score 0-100 */
-  score: number;
+  score: QualityScore;
   /** Exercise-specific metrics */
   metrics?: Record<string, number>;
   /** Feedback messages for the user */
@@ -75,7 +81,7 @@ export interface FormAnalyzerResult {
   /** Whether a rep was just completed */
   repCompleted: boolean;
   /** Total rep count */
-  repCount: number;
+  repCount: RepCount;
   /** Positions captured during the completed rep (only present when repCompleted=true) */
   repPositions?: RepPosition[];
   /** Quality metrics for the completed rep (only present when repCompleted=true) */
@@ -112,8 +118,8 @@ export interface FormAnalyzer {
    */
   processFrame(
     skeleton: Skeleton,
-    timestamp: number,
-    videoTime?: number,
+    timestamp: TimestampMs,
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult;
 
@@ -121,7 +127,7 @@ export interface FormAnalyzer {
   getPhase(): string;
 
   /** Get the current rep count */
-  getRepCount(): number;
+  getRepCount(): RepCount;
 
   /** Get quality metrics for the last completed rep */
   getLastRepQuality(): RepQuality | null;

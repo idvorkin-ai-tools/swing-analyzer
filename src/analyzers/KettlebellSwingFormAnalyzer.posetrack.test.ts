@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
+import { asTimestampMs, asVideoTimeSeconds } from '../utils/brandedTypes';
 import { KettlebellSwingFormAnalyzer } from './KettlebellSwingFormAnalyzer';
 
 // MediaPipe left/right pairs to swap when mirroring
@@ -127,7 +128,11 @@ function countRepsFromPosetrack(
 
     const spineAngle = calculateSpineAngle(keypoints);
     const skeleton = new Skeleton(keypoints, spineAngle, true);
-    const result = analyzer.processFrame(skeleton, Date.now(), frame.videoTime);
+    const result = analyzer.processFrame(
+      skeleton,
+      asTimestampMs(Date.now()),
+      asVideoTimeSeconds(frame.videoTime)
+    );
 
     if (result.repCount > lastRepCount) {
       repTimes.push(frame.videoTime);

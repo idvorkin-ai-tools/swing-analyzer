@@ -153,6 +153,68 @@ export const asPercent = (value: number): Percent => value as Percent;
 export const asConfidence = (value: number): Confidence => value as Confidence;
 
 // ============================================
+// Quality/Score Types
+// ============================================
+
+/** Quality score 0-100 (used for form quality, rep quality, position scores) */
+export type QualityScore = number & { readonly __brand: 'QualityScore' };
+
+/** Hinge score -1 to +1 (negative = squat pattern, positive = hinge pattern) */
+export type HingeScore = number & { readonly __brand: 'HingeScore' };
+
+// Quality/Score constructors
+export const asQualityScore = (value: number): QualityScore =>
+  value as QualityScore;
+export const asHingeScore = (value: number): HingeScore => value as HingeScore;
+
+// ============================================
+// Angular Velocity Types
+// ============================================
+
+/** Angular velocity in degrees per second */
+export type DegreesPerSecond = number & {
+  readonly __brand: 'DegreesPerSecond';
+};
+
+// Angular velocity constructors
+export const asDegreesPerSecond = (value: number): DegreesPerSecond =>
+  value as DegreesPerSecond;
+
+// ============================================
+// Count Types
+// ============================================
+
+/** Rep count (non-negative integer) */
+export type RepCount = number & { readonly __brand: 'RepCount' };
+
+/** Frame count (non-negative integer) */
+export type FrameCount = number & { readonly __brand: 'FrameCount' };
+
+// Count constructors
+export const asRepCount = (value: number): RepCount => value as RepCount;
+export const asFrameCount = (value: number): FrameCount => value as FrameCount;
+
+// ============================================
+// Measurement Types
+// ============================================
+
+/** Wrist height relative to shoulder in pixels (can be negative) */
+export type WristHeightPixels = number & {
+  readonly __brand: 'WristHeightPixels';
+};
+
+/** Video time position in seconds (time within a video, distinct from duration) */
+export type VideoTimeSeconds = number & {
+  readonly __brand: 'VideoTimeSeconds';
+};
+
+// Measurement constructors
+export const asWristHeightPixels = (value: number): WristHeightPixels =>
+  value as WristHeightPixels;
+export const asVideoTimeSeconds = (value: number): VideoTimeSeconds =>
+  value as VideoTimeSeconds;
+
+// ============================================
 // Conversion Utilities
 // ============================================
 

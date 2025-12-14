@@ -1,36 +1,45 @@
+import {
+  type AngleDegrees,
+  asDegreesPerSecond,
+  asQualityScore,
+  type DegreesPerSecond,
+  type HingeScore,
+  type QualityScore,
+  type TimestampMs,
+} from '../utils/brandedTypes';
 import type { Skeleton } from './Skeleton';
 
 /**
  * Frame data stored for temporal analysis
  */
 interface FrameData {
-  timestamp: number;
-  spineAngle: number;
-  hipAngle: number;
-  kneeAngle: number;
-  armToVerticalAngle: number;
+  timestamp: TimestampMs;
+  spineAngle: AngleDegrees;
+  hipAngle: AngleDegrees;
+  kneeAngle: AngleDegrees;
+  armToVerticalAngle: AngleDegrees;
 }
 
 /**
  * Angular velocity data (degrees per second)
  */
 export interface AngularVelocity {
-  spine: number; // Spine angular velocity
-  hip: number; // Hip angular velocity
-  knee: number; // Knee angular velocity
-  arm: number; // Arm angular velocity
+  spine: DegreesPerSecond; // Spine angular velocity
+  hip: DegreesPerSecond; // Hip angular velocity
+  knee: DegreesPerSecond; // Knee angular velocity
+  arm: DegreesPerSecond; // Arm angular velocity
 }
 
 /**
  * Form quality metrics
  */
 export interface FormQuality {
-  hingeScore: number; // -1 (squat) to +1 (hinge)
-  powerScore: number; // 0-100, based on angular velocity at key points
-  consistencyScore: number; // 0-100, based on rep-to-rep variation
-  lockoutScore: number; // 0-100, quality of top position
-  depthScore: number; // 0-100, quality of bottom position
-  overallScore: number; // 0-100, weighted average
+  hingeScore: HingeScore; // -1 (squat) to +1 (hinge)
+  powerScore: QualityScore; // 0-100, based on angular velocity at key points
+  consistencyScore: QualityScore; // 0-100, based on rep-to-rep variation
+  lockoutScore: QualityScore; // 0-100, quality of top position
+  depthScore: QualityScore; // 0-100, quality of bottom position
+  overallScore: QualityScore; // 0-100, weighted average
 }
 
 /**
@@ -61,7 +70,7 @@ export class BiomechanicsAnalyzer {
   /**
    * Add a new frame to the analysis buffer
    */
-  addFrame(skeleton: Skeleton, timestamp: number): void {
+  addFrame(skeleton: Skeleton, timestamp: TimestampMs): void {
     const frameData: FrameData = {
       timestamp,
       spineAngle: skeleton.getSpineAngle(),
@@ -99,10 +108,10 @@ export class BiomechanicsAnalyzer {
 
     // Exponential moving average weights (more recent frames weighted higher)
     const alpha = 0.3; // Smoothing factor
-    let smoothedSpine = this.frameBuffer[0].spineAngle;
-    let smoothedHip = this.frameBuffer[0].hipAngle;
-    let smoothedKnee = this.frameBuffer[0].kneeAngle;
-    let smoothedArm = this.frameBuffer[0].armToVerticalAngle;
+    let smoothedSpine: number = this.frameBuffer[0].spineAngle;
+    let smoothedHip: number = this.frameBuffer[0].hipAngle;
+    let smoothedKnee: number = this.frameBuffer[0].kneeAngle;
+    let smoothedArm: number = this.frameBuffer[0].armToVerticalAngle;
 
     for (let i = 1; i < this.frameBuffer.length; i++) {
       smoothedSpine =
@@ -135,8 +144,15 @@ export class BiomechanicsAnalyzer {
    * Low velocities indicate "muscling" the bell rather than using hip drive.
    */
   getAngularVelocity(): AngularVelocity {
+    const zeroVelocity: AngularVelocity = {
+      spine: asDegreesPerSecond(0),
+      hip: asDegreesPerSecond(0),
+      knee: asDegreesPerSecond(0),
+      arm: asDegreesPerSecond(0),
+    };
+
     if (this.frameBuffer.length < 2) {
-      return { spine: 0, hip: 0, knee: 0, arm: 0 };
+      return zeroVelocity;
     }
 
     // Use the last two frames for instantaneous velocity
@@ -145,14 +161,18 @@ export class BiomechanicsAnalyzer {
 
     const dt = (current.timestamp - previous.timestamp) / 1000; // Convert to seconds
     if (dt <= 0) {
-      return { spine: 0, hip: 0, knee: 0, arm: 0 };
+      return zeroVelocity;
     }
 
     return {
-      spine: (current.spineAngle - previous.spineAngle) / dt,
-      hip: (current.hipAngle - previous.hipAngle) / dt,
-      knee: (current.kneeAngle - previous.kneeAngle) / dt,
-      arm: (current.armToVerticalAngle - previous.armToVerticalAngle) / dt,
+      spine: asDegreesPerSecond(
+        (current.spineAngle - previous.spineAngle) / dt
+      ),
+      hip: asDegreesPerSecond((current.hipAngle - previous.hipAngle) / dt),
+      knee: asDegreesPerSecond((current.kneeAngle - previous.kneeAngle) / dt),
+      arm: asDegreesPerSecond(
+        (current.armToVerticalAngle - previous.armToVerticalAngle) / dt
+      ),
     };
   }
 
@@ -160,13 +180,25 @@ export class BiomechanicsAnalyzer {
    * Get smoothed angular velocity (reduces noise in velocity signal)
    */
   getSmoothedAngularVelocity(): AngularVelocity {
+    const zeroVelocity: AngularVelocity = {
+      spine: asDegreesPerSecond(0),
+      hip: asDegreesPerSecond(0),
+      knee: asDegreesPerSecond(0),
+      arm: asDegreesPerSecond(0),
+    };
+
     if (this.frameBuffer.length < 3) {
-      return { spine: 0, hip: 0, knee: 0, arm: 0 };
+      return zeroVelocity;
     }
 
     // Use central difference for smoother velocity estimate
     // v(t) ≈ (x(t+1) - x(t-1)) / (2*dt)
-    const velocities: AngularVelocity[] = [];
+    const velocities: {
+      spine: number;
+      hip: number;
+      knee: number;
+      arm: number;
+    }[] = [];
 
     for (let i = 1; i < this.frameBuffer.length - 1; i++) {
       const next = this.frameBuffer[i + 1];
@@ -184,7 +216,7 @@ export class BiomechanicsAnalyzer {
     }
 
     if (velocities.length === 0) {
-      return { spine: 0, hip: 0, knee: 0, arm: 0 };
+      return zeroVelocity;
     }
 
     // Average the velocities
@@ -199,10 +231,10 @@ export class BiomechanicsAnalyzer {
     );
 
     return {
-      spine: avgVel.spine / velocities.length,
-      hip: avgVel.hip / velocities.length,
-      knee: avgVel.knee / velocities.length,
-      arm: avgVel.arm / velocities.length,
+      spine: asDegreesPerSecond(avgVel.spine / velocities.length),
+      hip: asDegreesPerSecond(avgVel.hip / velocities.length),
+      knee: asDegreesPerSecond(avgVel.knee / velocities.length),
+      arm: asDegreesPerSecond(avgVel.arm / velocities.length),
     };
   }
 
@@ -294,11 +326,11 @@ export class BiomechanicsAnalyzer {
 
     return {
       hingeScore,
-      powerScore,
-      consistencyScore,
-      lockoutScore,
-      depthScore,
-      overallScore: Math.min(100, Math.max(0, overallScore)),
+      powerScore: asQualityScore(powerScore),
+      consistencyScore: asQualityScore(consistencyScore),
+      lockoutScore: asQualityScore(lockoutScore),
+      depthScore: asQualityScore(depthScore),
+      overallScore: asQualityScore(Math.min(100, Math.max(0, overallScore))),
     };
   }
 

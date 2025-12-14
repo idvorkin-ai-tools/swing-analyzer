@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { asTimestampMs } from '../utils/brandedTypes';
 import {
   createSwingMockSkeleton,
   SWING_PHASE_ANGLES,
@@ -57,31 +58,58 @@ describe('KettlebellSwingFormAnalyzer', () => {
   }) => {
     it('transitions from TOP to CONNECT when arms reach vertical with spine upright', () => {
       // Start in top
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), 0);
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), 10);
+      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(0));
+      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(10));
       expect(analyzer.getPhase()).toBe('top');
 
       // Transition to connect (|arm| < 15, spine < 25) - arms vertical before hinge
-      analyzer.processFrame(createMockSkeleton(ANGLES.connect), 20);
-      analyzer.processFrame(createMockSkeleton(ANGLES.connect), 30);
-      analyzer.processFrame(createMockSkeleton(ANGLES.connect), 40);
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.connect),
+        asTimestampMs(20)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.connect),
+        asTimestampMs(30)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.connect),
+        asTimestampMs(40)
+      );
 
       expect(analyzer.getPhase()).toBe('connect');
     });
 
     it('transitions from CONNECT to BOTTOM when fully hinged', () => {
       // Get to connect phase first
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), 0);
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), 10);
-      analyzer.processFrame(createMockSkeleton(ANGLES.connect), 20);
-      analyzer.processFrame(createMockSkeleton(ANGLES.connect), 30);
-      analyzer.processFrame(createMockSkeleton(ANGLES.connect), 40);
+      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(0));
+      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(10));
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.connect),
+        asTimestampMs(20)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.connect),
+        asTimestampMs(30)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.connect),
+        asTimestampMs(40)
+      );
       expect(analyzer.getPhase()).toBe('connect');
 
       // Transition to bottom (|arm| < 15, spine > 35, hip < 140)
-      analyzer.processFrame(createMockSkeleton(ANGLES.bottom), 50);
-      analyzer.processFrame(createMockSkeleton(ANGLES.bottom), 60);
-      analyzer.processFrame(createMockSkeleton(ANGLES.bottom), 70);
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.bottom),
+        asTimestampMs(50)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.bottom),
+        asTimestampMs(60)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.bottom),
+        asTimestampMs(70)
+      );
 
       expect(analyzer.getPhase()).toBe('bottom');
     });
@@ -92,9 +120,18 @@ describe('KettlebellSwingFormAnalyzer', () => {
       expect(analyzer.getPhase()).toBe('bottom');
 
       // Transition to release (|arm| > 10, spine < 25)
-      analyzer.processFrame(createMockSkeleton(ANGLES.release), 100);
-      analyzer.processFrame(createMockSkeleton(ANGLES.release), 110);
-      analyzer.processFrame(createMockSkeleton(ANGLES.release), 120);
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.release),
+        asTimestampMs(100)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.release),
+        asTimestampMs(110)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(ANGLES.release),
+        asTimestampMs(120)
+      );
 
       expect(analyzer.getPhase()).toBe('release');
     });
@@ -111,7 +148,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
       let time = 130;
       for (const wrist of wristPattern) {
         const angles = { ...ANGLES.top, wristHeight: wrist };
-        analyzer.processFrame(createMockSkeleton(angles), time);
+        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
         time += 10;
       }
 
@@ -134,7 +171,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
       goToPhase(analyzer, 'bottom');
       const bottomResult = analyzer.processFrame(
         createMockSkeleton(PHASE_ANGLES.bottom),
-        100
+        asTimestampMs(100)
       );
       expect(bottomResult.repCompleted).toBe(false);
 
@@ -142,7 +179,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
       for (let i = 0; i < 3; i++) {
         analyzer.processFrame(
           createMockSkeleton(PHASE_ANGLES.release),
-          200 + i * 10
+          asTimestampMs(200 + i * 10)
         );
       }
 
@@ -153,7 +190,9 @@ describe('KettlebellSwingFormAnalyzer', () => {
       const results: ReturnType<typeof analyzer.processFrame>[] = [];
       for (const wrist of wristPattern) {
         const angles = { ...PHASE_ANGLES.top, wristHeight: wrist };
-        results.push(analyzer.processFrame(createMockSkeleton(angles), time));
+        results.push(
+          analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time))
+        );
         time += 10;
       }
 
@@ -266,8 +305,8 @@ describe('KettlebellSwingFormAnalyzer', () => {
       const goodTop = { ...PHASE_ANGLES.top, arm: 80 }; // High arm angle
       const goodBottom = { ...PHASE_ANGLES.bottom, spine: 55 }; // Good hinge depth
 
-      analyzer.processFrame(createMockSkeleton(goodTop), 0);
-      analyzer.processFrame(createMockSkeleton(goodTop), 10);
+      analyzer.processFrame(createMockSkeleton(goodTop), asTimestampMs(0));
+      analyzer.processFrame(createMockSkeleton(goodTop), asTimestampMs(10));
 
       // Go through full cycle with good form
       goToPhase(analyzer, 'connect', 20);
@@ -314,12 +353,21 @@ describe('KettlebellSwingFormAnalyzer', () => {
   describe('frame debouncing', () => {
     it('requires minimum frames before transitioning', () => {
       // Single frame should not trigger transition
-      analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.connect), 0);
+      analyzer.processFrame(
+        createMockSkeleton(PHASE_ANGLES.connect),
+        asTimestampMs(0)
+      );
       expect(analyzer.getPhase()).toBe('top'); // Still in top
 
       // Need multiple frames
-      analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.connect), 10);
-      analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.connect), 20);
+      analyzer.processFrame(
+        createMockSkeleton(PHASE_ANGLES.connect),
+        asTimestampMs(10)
+      );
+      analyzer.processFrame(
+        createMockSkeleton(PHASE_ANGLES.connect),
+        asTimestampMs(20)
+      );
       expect(analyzer.getPhase()).toBe('connect');
     });
   });
@@ -334,7 +382,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
         wristHeight: 20,
       });
 
-      const result = analyzer.processFrame(skeleton, 0);
+      const result = analyzer.processFrame(skeleton, asTimestampMs(0));
 
       expect(result.angles.arm).toBe(45);
       expect(result.angles.spine).toBe(30);
@@ -362,14 +410,17 @@ describe('KettlebellSwingFormAnalyzer', () => {
 
       // Process through all phases
       for (let i = 0; i < 3; i++) {
-        analyzer.processFrame(createMockSkeleton(normalAngles.top), i * 10);
+        analyzer.processFrame(
+          createMockSkeleton(normalAngles.top),
+          asTimestampMs(i * 10)
+        );
       }
       expect(analyzer.getPhase()).toBe('top');
 
       for (let i = 0; i < 3; i++) {
         analyzer.processFrame(
           createMockSkeleton(normalAngles.connect),
-          30 + i * 10
+          asTimestampMs(30 + i * 10)
         );
       }
       expect(analyzer.getPhase()).toBe('connect');
@@ -377,7 +428,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
       for (let i = 0; i < 3; i++) {
         analyzer.processFrame(
           createMockSkeleton(normalAngles.bottom),
-          60 + i * 10
+          asTimestampMs(60 + i * 10)
         );
       }
       expect(analyzer.getPhase()).toBe('bottom');
@@ -395,14 +446,17 @@ describe('KettlebellSwingFormAnalyzer', () => {
 
       // Process through all phases - should work identically
       for (let i = 0; i < 3; i++) {
-        analyzer.processFrame(createMockSkeleton(mirroredAngles.top), i * 10);
+        analyzer.processFrame(
+          createMockSkeleton(mirroredAngles.top),
+          asTimestampMs(i * 10)
+        );
       }
       expect(analyzer.getPhase()).toBe('top');
 
       for (let i = 0; i < 3; i++) {
         analyzer.processFrame(
           createMockSkeleton(mirroredAngles.connect),
-          30 + i * 10
+          asTimestampMs(30 + i * 10)
         );
       }
       expect(analyzer.getPhase()).toBe('connect');
@@ -410,7 +464,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
       for (let i = 0; i < 3; i++) {
         analyzer.processFrame(
           createMockSkeleton(mirroredAngles.bottom),
-          60 + i * 10
+          asTimestampMs(60 + i * 10)
         );
       }
       expect(analyzer.getPhase()).toBe('bottom');
@@ -433,7 +487,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
         for (let i = 0; i < 3; i++) {
           analyzer.processFrame(
             createMockSkeleton(mirroredPhases[phase]),
-            time
+            asTimestampMs(time)
           );
           time += 10;
         }
@@ -443,7 +497,7 @@ describe('KettlebellSwingFormAnalyzer', () => {
       const wristPattern = [10, 20, 30, 50, 50, 50, 40, 30];
       for (const wrist of wristPattern) {
         const angles = { ...mirroredPhases.top, wristHeight: wrist };
-        analyzer.processFrame(createMockSkeleton(angles), time);
+        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
         time += 10;
       }
 
@@ -485,7 +539,7 @@ function goToPhase(
       const angles = PHASE_ANGLES[phase];
 
       for (let j = 0; j < 4; j++) {
-        analyzer.processFrame(createMockSkeleton(angles), time);
+        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
         time += 10;
       }
     }
@@ -496,7 +550,7 @@ function goToPhase(
       const angles = overrideAngles
         ? { ...overrideAngles, wristHeight: wrist }
         : { ...PHASE_ANGLES.top, wristHeight: wrist };
-      analyzer.processFrame(createMockSkeleton(angles), time);
+      analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
       time += 10;
     }
   } else {
@@ -513,7 +567,7 @@ function goToPhase(
           : PHASE_ANGLES[phase];
 
       for (let j = 0; j < 4; j++) {
-        analyzer.processFrame(createMockSkeleton(angles), time);
+        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
         time += 10;
       }
     }
@@ -543,14 +597,14 @@ function goToPhaseWithAngles(
       const phase = phases[i];
       const angles = phaseAngles[phase];
       for (let j = 0; j < 4; j++) {
-        analyzer.processFrame(createMockSkeleton(angles), time);
+        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
         time += 10;
       }
     }
     const wristPattern = [10, 20, 30, 50, 50, 50, 40, 30];
     for (const wrist of wristPattern) {
       const angles = { ...phaseAngles.top, wristHeight: wrist };
-      analyzer.processFrame(createMockSkeleton(angles), time);
+      analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
       time += 10;
     }
   } else {
@@ -562,7 +616,7 @@ function goToPhaseWithAngles(
       const phase = phases[i];
       const angles = phaseAngles[phase];
       for (let j = 0; j < 4; j++) {
-        analyzer.processFrame(createMockSkeleton(angles), time);
+        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
         time += 10;
       }
     }
@@ -586,25 +640,37 @@ function completeOneRep(
 
   // TOP phase - high wrist
   for (let i = 0; i < 3; i++) {
-    analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.top), time);
+    analyzer.processFrame(
+      createMockSkeleton(PHASE_ANGLES.top),
+      asTimestampMs(time)
+    );
     time += 10;
   }
 
   // CONNECT phase - wrist dropping
   for (let i = 0; i < 3; i++) {
-    analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.connect), time);
+    analyzer.processFrame(
+      createMockSkeleton(PHASE_ANGLES.connect),
+      asTimestampMs(time)
+    );
     time += 10;
   }
 
   // BOTTOM phase - lowest wrist
   for (let i = 0; i < 3; i++) {
-    analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.bottom), time);
+    analyzer.processFrame(
+      createMockSkeleton(PHASE_ANGLES.bottom),
+      asTimestampMs(time)
+    );
     time += 10;
   }
 
   // RELEASE phase - wrist starting to rise
   for (let i = 0; i < 3; i++) {
-    analyzer.processFrame(createMockSkeleton(PHASE_ANGLES.release), time);
+    analyzer.processFrame(
+      createMockSkeleton(PHASE_ANGLES.release),
+      asTimestampMs(time)
+    );
     time += 10;
   }
 
@@ -613,7 +679,7 @@ function completeOneRep(
   const wristPattern = [10, 20, 30, 50, 50, 50, 40, 30];
   for (const wrist of wristPattern) {
     const angles = { ...PHASE_ANGLES.top, wristHeight: wrist };
-    analyzer.processFrame(createMockSkeleton(angles), time);
+    analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
     time += 10;
   }
 }

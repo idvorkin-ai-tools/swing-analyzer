@@ -19,7 +19,15 @@
 
 import type { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts } from '../types';
-import { type AngleDegrees, asAngleDegrees } from '../utils/brandedTypes';
+import {
+  type AngleDegrees,
+  asAngleDegrees,
+  asFrameCount,
+  asQualityScore,
+  asTimestampMs,
+  type TimestampMs,
+  type VideoTimeSeconds,
+} from '../utils/brandedTypes';
 import {
   asPixelY,
   calculateDepthFromNormalizedY,
@@ -105,8 +113,8 @@ interface PistolSquatPhasePeak
  */
 interface EarFrameRecord {
   skeleton: Skeleton;
-  timestamp: number;
-  videoTime?: number;
+  timestamp: TimestampMs;
+  videoTime?: VideoTimeSeconds;
   earY: PixelY;
   angles: PistolSquatAngles;
   frameImage?: ImageData;
@@ -279,8 +287,8 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
    */
   processFrame(
     skeleton: Skeleton,
-    timestamp: number = Date.now(),
-    videoTime?: number,
+    timestamp: TimestampMs = asTimestampMs(Date.now()),
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult {
     // Detect working leg during early frames
@@ -340,7 +348,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     this.updateMetrics(allAngles);
 
     // Increment frames in current phase
-    this.framesInPhase++;
+    this.framesInPhase = asFrameCount(this.framesInPhase + 1);
 
     // Check for phase transitions
     let repCompleted = false;
@@ -415,7 +423,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: frame.skeleton,
       timestamp: frame.timestamp,
       videoTime: frame.videoTime,
-      score: frame.angles.workingKnee, // Higher = more upright
+      score: asQualityScore(frame.angles.workingKnee), // Higher = more upright
       angles: { ...frame.angles },
       earY: frame.earY,
       frameImage: frame.frameImage,
@@ -463,7 +471,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: this.bottomCandidate.skeleton,
       timestamp: this.bottomCandidate.timestamp,
       videoTime: this.bottomCandidate.videoTime,
-      score: this.bottomCandidate.earY, // Higher ear Y = deeper squat = better
+      score: asQualityScore(this.bottomCandidate.earY), // Higher ear Y = deeper squat = better
       angles: { ...this.bottomCandidate.angles },
       earY: this.bottomCandidate.earY,
       frameImage: this.bottomCandidate.frameImage,
@@ -514,7 +522,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: closest.skeleton,
       timestamp: closest.timestamp,
       videoTime: closest.videoTime,
-      score: closest.earY,
+      score: asQualityScore(closest.earY),
       angles: { ...closest.angles },
       earY: closest.earY,
       frameImage: closest.frameImage,
@@ -565,7 +573,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: closest.skeleton,
       timestamp: closest.timestamp,
       videoTime: closest.videoTime,
-      score: 180 - closest.angles.workingKnee, // Higher knee = further up
+      score: asQualityScore(180 - closest.angles.workingKnee), // Higher knee = further up
       angles: { ...closest.angles },
       earY: closest.earY,
       frameImage: closest.frameImage,
@@ -708,7 +716,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     }
 
     return {
-      score: Math.max(0, score),
+      score: asQualityScore(Math.max(0, score)),
       metrics: {
         depth: 180 - minWorkingKneeAngle, // Higher = deeper
         balance: 90 - maxSpineAngle, // Higher = better balance
