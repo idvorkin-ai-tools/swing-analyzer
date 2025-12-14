@@ -360,7 +360,10 @@ const VideoSectionV2: React.FC = () => {
                 {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: Tap to open gallery is supplementary, keyboard nav via gallery button */}
                 <div
                   className="hud-overlay-reps hud-overlay-reps--clickable"
-                  onClick={() => repCount > 0 && setShowGallery(true)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (repCount > 0) setShowGallery(true);
+                  }}
                   title="Tap to open rep gallery"
                 >
                   <span id="rep-counter" className="hud-overlay-reps-value">
