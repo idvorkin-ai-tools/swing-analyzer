@@ -31,8 +31,6 @@ export function RepGalleryWidget({
 }: RepGalleryWidgetProps) {
   // Ref for the current row (for auto-scrolling)
   const currentRowRef = useRef<HTMLDivElement>(null);
-  // Ref for the scroll container
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Track previous rep index to only scroll when it changes
   const prevRepIndexRef = useRef<number>(-1);
@@ -44,33 +42,14 @@ export function RepGalleryWidget({
   );
 
   // Auto-scroll to current row when rep index changes (within container only)
-  // Uses direct scrollTop manipulation to avoid page-level scrolling
   useEffect(() => {
-    if (
-      prevRepIndexRef.current !== currentRepIndex &&
-      currentRowRef.current &&
-      scrollContainerRef.current
-    ) {
+    if (prevRepIndexRef.current !== currentRepIndex && currentRowRef.current) {
       prevRepIndexRef.current = currentRepIndex;
-
-      const container = scrollContainerRef.current;
-      const row = currentRowRef.current;
-
-      // Calculate if row is visible within container
-      const containerRect = container.getBoundingClientRect();
-      const rowRect = row.getBoundingClientRect();
-
-      // Row is above visible area
-      if (rowRect.top < containerRect.top) {
-        const scrollOffset = rowRect.top - containerRect.top;
-        container.scrollTop += scrollOffset;
-      }
-      // Row is below visible area
-      else if (rowRect.bottom > containerRect.bottom) {
-        const scrollOffset = rowRect.bottom - containerRect.bottom;
-        container.scrollTop += scrollOffset;
-      }
-      // Row is already visible - no scroll needed
+      // Use 'nearest' to only scroll if row is not visible, avoiding page-level scroll
+      currentRowRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
     }
   }, [currentRepIndex]);
 
@@ -118,7 +97,7 @@ export function RepGalleryWidget({
       </div>
 
       {/* Rows container */}
-      <div className="rep-gallery-rows" ref={scrollContainerRef}>
+      <div className="rep-gallery-rows">
         {repNumbers.map((repNum) => {
           const positions = repThumbnails.get(repNum);
           if (!positions || positions.size === 0) return null;
