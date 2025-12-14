@@ -16,6 +16,18 @@
  */
 
 import type { Skeleton } from '../models/Skeleton';
+import {
+  type AngleDegrees,
+  asAngleDegrees,
+  asFrameCount,
+  asQualityScore,
+  asTimestampMs,
+  type FrameCount,
+  type QualityScore,
+  type TimestampMs,
+  type VideoTimeSeconds,
+  type WristHeightPixels,
+} from '../utils/brandedTypes';
 import type {
   FormAnalyzerResult,
   RepPosition,
@@ -33,55 +45,55 @@ export type SwingPhase = 'top' | 'connect' | 'bottom' | 'release';
  */
 export interface SwingThresholds {
   // TOP position
-  topSpineMax: number; // Spine must be below this (upright)
-  topHipMin: number; // Hip must be above this (extended)
-  topArmMin: number; // Arm must be above this (near horizontal)
+  topSpineMax: AngleDegrees; // Spine must be below this (upright)
+  topHipMin: AngleDegrees; // Hip must be above this (extended)
+  topArmMin: AngleDegrees; // Arm must be above this (near horizontal)
 
   // BOTTOM position
-  bottomArmMax: number; // Arm must be below this (behind body)
-  bottomSpineMin: number; // Spine must be above this (hinged)
-  bottomHipMax: number; // Hip must be below this (hinged)
+  bottomArmMax: AngleDegrees; // Arm must be below this (behind body)
+  bottomSpineMin: AngleDegrees; // Spine must be above this (hinged)
+  bottomHipMax: AngleDegrees; // Hip must be below this (hinged)
 
   // CONNECT thresholds (arms connecting to body before hinge)
-  connectArmMax: number; // Arm near vertical (0°)
-  connectSpineMax: number; // Spine still upright (before hinge)
+  connectArmMax: AngleDegrees; // Arm near vertical (0°)
+  connectSpineMax: AngleDegrees; // Spine still upright (before hinge)
 
   // RELEASE thresholds (arms crossing vertical on way up from hinge)
-  releaseArmMax: number; // Arm crossing vertical (near 0°)
-  releaseSpineMax: number; // Spine returning to upright
+  releaseArmMax: AngleDegrees; // Arm crossing vertical (near 0°)
+  releaseSpineMax: AngleDegrees; // Spine returning to upright
 }
 
 /**
  * Default thresholds based on analysis of real swing videos
  */
 const DEFAULT_THRESHOLDS: SwingThresholds = {
-  topSpineMax: 25,
-  topHipMin: 150,
-  topArmMin: 55, // Arm must be >55° from vertical (near horizontal, relaxed from 60 for one-handed swings)
+  topSpineMax: asAngleDegrees(25),
+  topHipMin: asAngleDegrees(150),
+  topArmMin: asAngleDegrees(55), // Arm must be >55° from vertical (near horizontal, relaxed from 60 for one-handed swings)
   // bottomArmMax controls CONNECT→BOTTOM transition: |arm| < bottomArmMax + 15
   // Real swing data shows arm angles of 30-55° at bottom position (arms swing behind body)
   // Set to 40 so threshold becomes |arm| < 55, capturing actual swing motion
-  bottomArmMax: 40,
-  bottomSpineMin: 35,
-  bottomHipMax: 140,
+  bottomArmMax: asAngleDegrees(40),
+  bottomSpineMin: asAngleDegrees(35),
+  bottomHipMax: asAngleDegrees(140),
   // CONNECT: arms approaching vertical while spine still upright (before hinge)
   // Threshold relaxed to capture the phase even with imperfect form
   // Quality scoring evaluates how close to vertical (0°) the arms actually were
-  connectArmMax: 25,
-  connectSpineMax: 25,
+  connectArmMax: asAngleDegrees(25),
+  connectSpineMax: asAngleDegrees(25),
   // RELEASE: arms crossing vertical on way up from hinge (mirrors CONNECT)
-  releaseArmMax: 25,
-  releaseSpineMax: 25,
+  releaseArmMax: asAngleDegrees(25),
+  releaseSpineMax: asAngleDegrees(25),
 };
 
 /**
  * Swing-specific angles tracked during the movement
  */
 interface SwingAngles {
-  arm: number;
-  spine: number;
-  hip: number;
-  knee: number;
+  arm: AngleDegrees;
+  spine: AngleDegrees;
+  hip: AngleDegrees;
+  knee: AngleDegrees;
 }
 
 /**
@@ -95,11 +107,11 @@ interface SwingPhasePeak extends BasePhasePeak<SwingPhase, SwingAngles> {
  * Metrics tracked during a rep for quality scoring
  */
 interface SwingRepMetrics {
-  maxSpineAngle: number;
-  minHipAngle: number;
-  maxArmAngle: number;
-  minArmAngle: number;
-  maxKneeFlexion: number;
+  maxSpineAngle: AngleDegrees;
+  minHipAngle: AngleDegrees;
+  maxArmAngle: AngleDegrees;
+  minArmAngle: AngleDegrees;
+  maxKneeFlexion: AngleDegrees;
 }
 
 /**
@@ -122,8 +134,8 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
   private currentPhasePeak: SwingPhasePeak | null = null;
 
   // Wrist height history for peak detection
-  private wristHeightHistory: number[] = [];
-  private readonly wristHeightWindowSize = 5;
+  private wristHeightHistory: WristHeightPixels[] = [];
+  private readonly wristHeightWindowSize: FrameCount = asFrameCount(5);
 
   constructor(thresholds: Partial<SwingThresholds> = {}) {
     super('top');
@@ -139,8 +151,8 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
    */
   processFrame(
     skeleton: Skeleton,
-    timestamp: number = Date.now(),
-    videoTime?: number,
+    timestamp: TimestampMs = asTimestampMs(Date.now()),
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult {
     // Always use right arm - for left-handed users, mirror the skeleton data
@@ -166,7 +178,7 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
     this.updatePhasePeak(skeleton, timestamp, videoTime, angles, frameImage);
 
     // Increment frames in current phase
-    this.framesInPhase++;
+    this.framesInPhase = asFrameCount(this.framesInPhase + 1);
 
     // Check for phase transitions
     let repCompleted = false;
@@ -223,8 +235,8 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
    */
   private updatePhasePeak(
     skeleton: Skeleton,
-    timestamp: number,
-    videoTime: number | undefined,
+    timestamp: TimestampMs,
+    videoTime: VideoTimeSeconds | undefined,
     angles: SwingAngles,
     frameImage?: ImageData
   ): void {
@@ -264,23 +276,26 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
   /**
    * Calculate how "peak" this frame is for the given phase
    */
-  private calculatePeakScore(phase: SwingPhase, angles: SwingAngles): number {
+  private calculatePeakScore(
+    phase: SwingPhase,
+    angles: SwingAngles
+  ): QualityScore {
     switch (phase) {
       case 'top':
-        return angles.arm; // Highest arm = best lockout
+        return asQualityScore(angles.arm); // Highest arm = best lockout
       case 'connect':
-        return 90 - angles.arm; // Lower arm = better (arms vertical before hinge)
+        return asQualityScore(90 - angles.arm); // Lower arm = better (arms vertical before hinge)
       case 'bottom':
-        return angles.spine; // Highest spine = deepest hinge
+        return asQualityScore(angles.spine); // Highest spine = deepest hinge
       case 'release':
-        return 90 - angles.spine; // Lower spine = better (vertical when arms release)
+        return asQualityScore(90 - angles.spine); // Lower spine = better (vertical when arms release)
       default: {
         // Exhaustive check - TypeScript will error if a SwingPhase is unhandled
         const _exhaustiveCheck: never = phase;
         console.error(
           `calculatePeakScore: Unhandled phase "${_exhaustiveCheck}"`
         );
-        return 0;
+        return asQualityScore(0);
       }
     }
   }
@@ -438,32 +453,27 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
    * Update tracking metrics during rep
    */
   private updateMetrics(
-    arm: number,
-    spine: number,
-    hip: number,
-    knee: number
+    arm: AngleDegrees,
+    spine: AngleDegrees,
+    hip: AngleDegrees,
+    knee: AngleDegrees
   ): void {
-    this.currentRepMetrics.maxSpineAngle = Math.max(
-      this.currentRepMetrics.maxSpineAngle,
-      spine
+    this.currentRepMetrics.maxSpineAngle = asAngleDegrees(
+      Math.max(this.currentRepMetrics.maxSpineAngle, spine)
     );
-    this.currentRepMetrics.minHipAngle = Math.min(
-      this.currentRepMetrics.minHipAngle,
-      hip
+    this.currentRepMetrics.minHipAngle = asAngleDegrees(
+      Math.min(this.currentRepMetrics.minHipAngle, hip)
     );
-    this.currentRepMetrics.maxArmAngle = Math.max(
-      this.currentRepMetrics.maxArmAngle,
-      arm
+    this.currentRepMetrics.maxArmAngle = asAngleDegrees(
+      Math.max(this.currentRepMetrics.maxArmAngle, arm)
     );
-    this.currentRepMetrics.minArmAngle = Math.min(
-      this.currentRepMetrics.minArmAngle,
-      arm
+    this.currentRepMetrics.minArmAngle = asAngleDegrees(
+      Math.min(this.currentRepMetrics.minArmAngle, arm)
     );
 
-    const kneeFlexion = 175 - knee;
-    this.currentRepMetrics.maxKneeFlexion = Math.max(
-      this.currentRepMetrics.maxKneeFlexion,
-      kneeFlexion
+    const kneeFlexion = asAngleDegrees(175 - knee);
+    this.currentRepMetrics.maxKneeFlexion = asAngleDegrees(
+      Math.max(this.currentRepMetrics.maxKneeFlexion, kneeFlexion)
     );
   }
 
@@ -472,11 +482,11 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
    */
   private createInitialMetrics(): SwingRepMetrics {
     return {
-      maxSpineAngle: 0,
-      minHipAngle: 180,
-      maxArmAngle: 0,
-      minArmAngle: 90,
-      maxKneeFlexion: 0,
+      maxSpineAngle: asAngleDegrees(0),
+      minHipAngle: asAngleDegrees(180),
+      maxArmAngle: asAngleDegrees(0),
+      minArmAngle: asAngleDegrees(90),
+      maxKneeFlexion: asAngleDegrees(0),
     };
   }
 
@@ -519,7 +529,7 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
     }
 
     return {
-      score: Math.max(0, score),
+      score: asQualityScore(Math.max(0, score)),
       metrics: {
         hingeDepth: maxSpineAngle,
         lockoutAngle: maxArmAngle,

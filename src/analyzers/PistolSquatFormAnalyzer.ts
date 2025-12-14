@@ -20,6 +20,15 @@
 import type { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts } from '../types';
 import {
+  type AngleDegrees,
+  asAngleDegrees,
+  asFrameCount,
+  asQualityScore,
+  asTimestampMs,
+  type TimestampMs,
+  type VideoTimeSeconds,
+} from '../utils/brandedTypes';
+import {
   asPixelY,
   calculateDepthFromNormalizedY,
   DEFAULT_VIDEO_HEIGHT,
@@ -49,19 +58,19 @@ export type PistolSquatPhase =
  */
 export interface PistolSquatThresholds {
   // STANDING position
-  standingKneeMin: number; // Working knee must be above this (nearly straight)
-  standingSpineMax: number; // Spine must be below this (relatively upright)
+  standingKneeMin: AngleDegrees; // Working knee must be above this (nearly straight)
+  standingSpineMax: AngleDegrees; // Spine must be below this (relatively upright)
 
   // BOTTOM position
-  bottomKneeMax: number; // Working knee must be below this (deep squat)
-  bottomHipMax: number; // Working hip must be below this (flexed)
+  bottomKneeMax: AngleDegrees; // Working knee must be below this (deep squat)
+  bottomHipMax: AngleDegrees; // Working hip must be below this (flexed)
 
   // Transition thresholds
-  descendingKneeThreshold: number; // Start descending when knee drops below this
-  ascendingKneeThreshold: number; // Start ascending when knee rises above this
+  descendingKneeThreshold: AngleDegrees; // Start descending when knee drops below this
+  ascendingKneeThreshold: AngleDegrees; // Start ascending when knee rises above this
 
   // Posture validation (reject horizontal/lying poses)
-  maxValidSpineAngle: number; // Reject frames with spine angle above this (person lying down)
+  maxValidSpineAngle: AngleDegrees; // Reject frames with spine angle above this (person lying down)
 
   // Video dimensions for coordinate normalization
   videoHeight: VideoHeight; // Video height in pixels (default 1080)
@@ -71,13 +80,13 @@ export interface PistolSquatThresholds {
  * Default thresholds based on typical pistol squat biomechanics
  */
 const DEFAULT_THRESHOLDS: PistolSquatThresholds = {
-  standingKneeMin: 150, // ~150° = slightly bent but mostly straight
-  standingSpineMax: 25, // ~25° = relatively upright
-  bottomKneeMax: 80, // ~80° = deep squat position
-  bottomHipMax: 100, // ~100° = hip flexed in squat
-  descendingKneeThreshold: 140, // Start descending when knee < 140°
-  ascendingKneeThreshold: 90, // Start ascending when knee > 90°
-  maxValidSpineAngle: 60, // ~60° = reject horizontal/lying poses (>60° is not upright)
+  standingKneeMin: asAngleDegrees(150), // ~150° = slightly bent but mostly straight
+  standingSpineMax: asAngleDegrees(25), // ~25° = relatively upright
+  bottomKneeMax: asAngleDegrees(80), // ~80° = deep squat position
+  bottomHipMax: asAngleDegrees(100), // ~100° = hip flexed in squat
+  descendingKneeThreshold: asAngleDegrees(140), // Start descending when knee < 140°
+  ascendingKneeThreshold: asAngleDegrees(90), // Start ascending when knee > 90°
+  maxValidSpineAngle: asAngleDegrees(60), // ~60° = reject horizontal/lying poses (>60° is not upright)
   videoHeight: DEFAULT_VIDEO_HEIGHT, // 1080p default
 };
 
@@ -85,10 +94,10 @@ const DEFAULT_THRESHOLDS: PistolSquatThresholds = {
  * Pistol squat angles tracked during the movement
  */
 interface PistolSquatAngles {
-  workingKnee: number;
-  workingHip: number;
-  spine: number;
-  extendedKnee: number;
+  workingKnee: AngleDegrees;
+  workingHip: AngleDegrees;
+  spine: AngleDegrees;
+  extendedKnee: AngleDegrees;
 }
 
 /**
@@ -96,7 +105,7 @@ interface PistolSquatAngles {
  */
 interface PistolSquatPhasePeak
   extends BasePhasePeak<PistolSquatPhase, PistolSquatAngles> {
-  earY: number;
+  earY: PixelY;
 }
 
 /**
@@ -104,9 +113,9 @@ interface PistolSquatPhasePeak
  */
 interface EarFrameRecord {
   skeleton: Skeleton;
-  timestamp: number;
-  videoTime?: number;
-  earY: number;
+  timestamp: TimestampMs;
+  videoTime?: VideoTimeSeconds;
+  earY: PixelY;
   angles: PistolSquatAngles;
   frameImage?: ImageData;
 }
@@ -115,9 +124,9 @@ interface EarFrameRecord {
  * Metrics tracked during a rep for quality scoring
  */
 interface PistolSquatRepMetrics {
-  minWorkingKneeAngle: number; // Deepest squat (lower = better)
-  maxSpineAngle: number; // Forward lean (too much = poor balance)
-  minExtendedKneeAngle: number; // Extended leg straightness (higher = better)
+  minWorkingKneeAngle: AngleDegrees; // Deepest squat (lower = better)
+  maxSpineAngle: AngleDegrees; // Forward lean (too much = poor balance)
+  minExtendedKneeAngle: AngleDegrees; // Extended leg straightness (higher = better)
 }
 
 /**
@@ -153,7 +162,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
 
   // Ear-based trough detection for bottom position
   // Uses ear Y position (head height) which is more stable than knee angles
-  private standingEarY: number | null = null; // Ear Y at rep start (lowest Y = highest position)
+  private standingEarY: PixelY | null = null; // Ear Y at rep start (lowest Y = highest position)
   private bottomCandidate: EarFrameRecord | null = null; // Frame with highest ear Y (lowest position)
   private framesAscendingAfterBottom = 0; // Frames where ear Y has been decreasing (person rising)
   private readonly framesNeededToConfirmBottom = 3;
@@ -206,11 +215,11 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
    * Get angles for the current skeleton using detected working leg
    */
   private getAngles(skeleton: Skeleton): {
-    workingKnee: number;
-    workingHip: number;
-    extendedKnee: number;
-    extendedHip: number;
-    spine: number;
+    workingKnee: AngleDegrees;
+    workingHip: AngleDegrees;
+    extendedKnee: AngleDegrees;
+    extendedHip: AngleDegrees;
+    spine: AngleDegrees;
   } {
     const working = this.workingLeg ?? 'left';
     const extended = working === 'left' ? 'right' : 'left';
@@ -278,8 +287,8 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
    */
   processFrame(
     skeleton: Skeleton,
-    timestamp: number = Date.now(),
-    videoTime?: number,
+    timestamp: TimestampMs = asTimestampMs(Date.now()),
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult {
     // Detect working leg during early frames
@@ -339,7 +348,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     this.updateMetrics(allAngles);
 
     // Increment frames in current phase
-    this.framesInPhase++;
+    this.framesInPhase = asFrameCount(this.framesInPhase + 1);
 
     // Check for phase transitions
     let repCompleted = false;
@@ -414,7 +423,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: frame.skeleton,
       timestamp: frame.timestamp,
       videoTime: frame.videoTime,
-      score: frame.angles.workingKnee, // Higher = more upright
+      score: asQualityScore(frame.angles.workingKnee), // Higher = more upright
       angles: { ...frame.angles },
       earY: frame.earY,
       frameImage: frame.frameImage,
@@ -462,7 +471,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: this.bottomCandidate.skeleton,
       timestamp: this.bottomCandidate.timestamp,
       videoTime: this.bottomCandidate.videoTime,
-      score: this.bottomCandidate.earY, // Higher ear Y = deeper squat = better
+      score: asQualityScore(this.bottomCandidate.earY), // Higher ear Y = deeper squat = better
       angles: { ...this.bottomCandidate.angles },
       earY: this.bottomCandidate.earY,
       frameImage: this.bottomCandidate.frameImage,
@@ -513,7 +522,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: closest.skeleton,
       timestamp: closest.timestamp,
       videoTime: closest.videoTime,
-      score: closest.earY,
+      score: asQualityScore(closest.earY),
       angles: { ...closest.angles },
       earY: closest.earY,
       frameImage: closest.frameImage,
@@ -564,7 +573,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
       skeleton: closest.skeleton,
       timestamp: closest.timestamp,
       videoTime: closest.videoTime,
-      score: 180 - closest.angles.workingKnee, // Higher knee = further up
+      score: asQualityScore(180 - closest.angles.workingKnee), // Higher knee = further up
       angles: { ...closest.angles },
       earY: closest.earY,
       frameImage: closest.frameImage,
@@ -639,21 +648,18 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
    * Update tracking metrics during rep
    */
   private updateMetrics(angles: {
-    workingKnee: number;
-    extendedKnee: number;
-    spine: number;
+    workingKnee: AngleDegrees;
+    extendedKnee: AngleDegrees;
+    spine: AngleDegrees;
   }): void {
-    this.currentRepMetrics.minWorkingKneeAngle = Math.min(
-      this.currentRepMetrics.minWorkingKneeAngle,
-      angles.workingKnee
+    this.currentRepMetrics.minWorkingKneeAngle = asAngleDegrees(
+      Math.min(this.currentRepMetrics.minWorkingKneeAngle, angles.workingKnee)
     );
-    this.currentRepMetrics.maxSpineAngle = Math.max(
-      this.currentRepMetrics.maxSpineAngle,
-      angles.spine
+    this.currentRepMetrics.maxSpineAngle = asAngleDegrees(
+      Math.max(this.currentRepMetrics.maxSpineAngle, angles.spine)
     );
-    this.currentRepMetrics.minExtendedKneeAngle = Math.min(
-      this.currentRepMetrics.minExtendedKneeAngle,
-      angles.extendedKnee
+    this.currentRepMetrics.minExtendedKneeAngle = asAngleDegrees(
+      Math.min(this.currentRepMetrics.minExtendedKneeAngle, angles.extendedKnee)
     );
   }
 
@@ -662,9 +668,9 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
    */
   private createInitialMetrics(): PistolSquatRepMetrics {
     return {
-      minWorkingKneeAngle: 180,
-      maxSpineAngle: 0,
-      minExtendedKneeAngle: 180,
+      minWorkingKneeAngle: asAngleDegrees(180),
+      maxSpineAngle: asAngleDegrees(0),
+      minExtendedKneeAngle: asAngleDegrees(180),
     };
   }
 
@@ -710,7 +716,7 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     }
 
     return {
-      score: Math.max(0, score),
+      score: asQualityScore(Math.max(0, score)),
       metrics: {
         depth: 180 - minWorkingKneeAngle, // Higher = deeper
         balance: 90 - maxSpineAngle, // Higher = better balance

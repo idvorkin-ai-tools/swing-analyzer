@@ -12,6 +12,7 @@ import {
   LOCAL_SAMPLE_VIDEO,
 } from '../config/sampleVideos';
 import type {
+  FrameEvent,
   SkeletonEvent,
   SkeletonTransformer,
 } from '../pipeline/PipelineInterfaces';
@@ -23,6 +24,7 @@ import {
   recordVideoLoad,
 } from '../services/SessionRecorder';
 import type { AppState } from '../types';
+import { asTimestampMs } from '../utils/brandedTypes';
 import type { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 
 /**
@@ -229,9 +231,9 @@ export function useVideoControls({
       return;
 
     // Create a frame event directly
-    const frameEvent = {
+    const frameEvent: FrameEvent = {
       frame: videoRef.current,
-      timestamp: performance.now(),
+      timestamp: asTimestampMs(performance.now()),
     };
 
     // Use the direct transformer to process the frame

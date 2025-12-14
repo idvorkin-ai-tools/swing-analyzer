@@ -7,15 +7,23 @@
 
 import type { PoseKeypoint } from '../types';
 import type { CropRegion, PoseTrackFrame } from '../types/posetrack';
+import {
+  asPixelX,
+  asPixelY,
+  type PixelX,
+  type PixelY,
+  type VideoHeight,
+  type VideoWidth,
+} from './brandedTypes';
 
 /**
  * Bounding box in video pixel coordinates
  */
 interface BoundingBox {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
+  minX: PixelX;
+  minY: PixelY;
+  maxX: PixelX;
+  maxY: PixelY;
 }
 
 /**
@@ -34,19 +42,24 @@ export function calculateBoundingBox(
     return null;
   }
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  let minXVal = Infinity;
+  let minYVal = Infinity;
+  let maxXVal = -Infinity;
+  let maxYVal = -Infinity;
 
   for (const kp of confidentKeypoints) {
-    minX = Math.min(minX, kp.x);
-    minY = Math.min(minY, kp.y);
-    maxX = Math.max(maxX, kp.x);
-    maxY = Math.max(maxY, kp.y);
+    minXVal = Math.min(minXVal, kp.x);
+    minYVal = Math.min(minYVal, kp.y);
+    maxXVal = Math.max(maxXVal, kp.x);
+    maxYVal = Math.max(maxYVal, kp.y);
   }
 
-  return { minX, minY, maxX, maxY };
+  return {
+    minX: asPixelX(minXVal),
+    minY: asPixelY(minYVal),
+    maxX: asPixelX(maxXVal),
+    maxY: asPixelY(maxYVal),
+  };
 }
 
 /**
@@ -57,19 +70,24 @@ export function mergeBoundingBoxes(boxes: BoundingBox[]): BoundingBox | null {
     return null;
   }
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  let minXVal = Infinity;
+  let minYVal = Infinity;
+  let maxXVal = -Infinity;
+  let maxYVal = -Infinity;
 
   for (const box of boxes) {
-    minX = Math.min(minX, box.minX);
-    minY = Math.min(minY, box.minY);
-    maxX = Math.max(maxX, box.maxX);
-    maxY = Math.max(maxY, box.maxY);
+    minXVal = Math.min(minXVal, box.minX);
+    minYVal = Math.min(minYVal, box.minY);
+    maxXVal = Math.max(maxXVal, box.maxX);
+    maxYVal = Math.max(maxYVal, box.maxY);
   }
 
-  return { minX, minY, maxX, maxY };
+  return {
+    minX: asPixelX(minXVal),
+    minY: asPixelY(minYVal),
+    maxX: asPixelX(maxXVal),
+    maxY: asPixelY(maxYVal),
+  };
 }
 
 /**
@@ -88,8 +106,8 @@ export function mergeBoundingBoxes(boxes: BoundingBox[]): BoundingBox | null {
  */
 export function calculateStableCropRegion(
   frames: PoseTrackFrame[],
-  videoWidth: number,
-  videoHeight: number,
+  videoWidth: VideoWidth,
+  videoHeight: VideoHeight,
   widthPadding = 1.4,
   heightPadding = 1.3
 ): CropRegion | null {
@@ -186,8 +204,8 @@ export function calculateStableCropRegion(
  * Check if a video is landscape orientation
  */
 export function isLandscapeVideo(
-  videoWidth: number,
-  videoHeight: number
+  videoWidth: VideoWidth,
+  videoHeight: VideoHeight
 ): boolean {
   return videoWidth > videoHeight;
 }

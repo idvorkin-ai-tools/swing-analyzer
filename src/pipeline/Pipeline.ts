@@ -12,6 +12,7 @@ import {
 } from '../analyzers';
 import type { Skeleton } from '../models/Skeleton';
 import type { CropRegion } from '../types/posetrack';
+import { asTimestampMs, asVideoTimeSeconds } from '../utils/brandedTypes';
 import type {
   FrameAcquisition,
   FrameEvent,
@@ -246,8 +247,10 @@ export class Pipeline {
     const frame = this.frameAcquisition.getCurrentFrame();
     const frameEvent: FrameEvent = {
       frame,
-      timestamp: performance.now(),
-      videoTime: (frame as HTMLVideoElement).currentTime ?? 0,
+      timestamp: asTimestampMs(performance.now()),
+      videoTime: asVideoTimeSeconds(
+        (frame as HTMLVideoElement).currentTime ?? 0
+      ),
     };
 
     // Transform to skeleton using async method

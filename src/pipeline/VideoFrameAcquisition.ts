@@ -8,6 +8,7 @@ import {
 } from 'rxjs';
 import { map, startWith, switchMap, takeUntil } from 'rxjs/operators';
 import type { CropRegion } from '../types/posetrack';
+import { asTimestampMs, asVideoTimeSeconds } from '../utils/brandedTypes';
 import type { FrameAcquisition, FrameEvent } from './PipelineInterfaces';
 
 /**
@@ -236,8 +237,8 @@ export class VideoFrameAcquisition implements FrameAcquisition {
     const seeked$ = fromEvent(this.videoElement, 'seeked').pipe(
       map(() => ({
         frame: this.videoElement,
-        timestamp: performance.now(),
-        videoTime: this.videoElement.currentTime,
+        timestamp: asTimestampMs(performance.now()),
+        videoTime: asVideoTimeSeconds(this.videoElement.currentTime),
       })),
       takeUntil(this.stop$)
     );
@@ -252,8 +253,8 @@ export class VideoFrameAcquisition implements FrameAcquisition {
               takeUntil(this.stop$),
               map(() => ({
                 frame: this.videoElement,
-                timestamp: performance.now(),
-                videoTime: this.videoElement.currentTime,
+                timestamp: asTimestampMs(performance.now()),
+                videoTime: asVideoTimeSeconds(this.videoElement.currentTime),
               }))
             )
       ),

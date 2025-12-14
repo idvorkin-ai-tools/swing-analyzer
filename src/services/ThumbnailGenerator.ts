@@ -20,7 +20,17 @@
  */
 
 import type { RepPosition } from '../analyzers/FormAnalyzer';
-import { calculatePersonCenteredCrop } from '../utils/thumbnailCrop';
+import {
+  asConfidence,
+  asPixelX,
+  asPixelY,
+  asVideoHeight,
+  asVideoWidth,
+} from '../utils/brandedTypes';
+import {
+  type CropKeypoint,
+  calculatePersonCenteredCrop,
+} from '../utils/thumbnailCrop';
 
 // Thumbnail dimensions (matches PoseExtractor)
 const THUMB_WIDTH = 120;
@@ -364,12 +374,18 @@ export class ThumbnailQueue {
     videoWidth: number,
     videoHeight: number
   ): { cropX: number; cropY: number; cropWidth: number; cropHeight: number } {
-    const keypoints = skeleton?.getKeypoints?.() ?? [];
+    const rawKeypoints = skeleton?.getKeypoints?.() ?? [];
+    // Convert PoseKeypoint[] to CropKeypoint[] with branded types
+    const keypoints: CropKeypoint[] = rawKeypoints.map((kp) => ({
+      x: asPixelX(kp.x),
+      y: asPixelY(kp.y),
+      score: kp.score !== undefined ? asConfidence(kp.score) : undefined,
+    }));
     return calculatePersonCenteredCrop(keypoints, {
       thumbWidth: THUMB_WIDTH,
       thumbHeight: THUMB_HEIGHT,
-      videoWidth,
-      videoHeight,
+      videoWidth: asVideoWidth(videoWidth),
+      videoHeight: asVideoHeight(videoHeight),
     });
   }
 

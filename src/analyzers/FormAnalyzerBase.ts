@@ -19,6 +19,15 @@
  */
 
 import type { Skeleton } from '../models/Skeleton';
+import {
+  asFrameCount,
+  asRepCount,
+  type FrameCount,
+  type QualityScore,
+  type RepCount,
+  type TimestampMs,
+  type VideoTimeSeconds,
+} from '../utils/brandedTypes';
 import type {
   FormAnalyzer,
   FormAnalyzerResult,
@@ -33,9 +42,9 @@ import type {
 export interface BasePhasePeak<TPhase extends string, TAngles> {
   phase: TPhase;
   skeleton: Skeleton;
-  timestamp: number;
-  videoTime?: number;
-  score: number;
+  timestamp: TimestampMs;
+  videoTime?: VideoTimeSeconds;
+  score: QualityScore;
   angles: TAngles;
   frameImage?: ImageData;
 }
@@ -57,16 +66,16 @@ export abstract class FormAnalyzerBase<
   protected phase: TPhase;
 
   /** Total completed rep count */
-  protected repCount = 0;
+  protected repCount: RepCount = asRepCount(0);
 
   /** Quality metrics for the last completed rep */
   protected lastRepQuality: RepQuality | null = null;
 
   /** Number of frames spent in current phase (for debouncing) */
-  protected framesInPhase = 0;
+  protected framesInPhase: FrameCount = asFrameCount(0);
 
   /** Minimum frames required before allowing phase transition */
-  protected readonly minFramesInPhase = 2;
+  protected readonly minFramesInPhase: FrameCount = asFrameCount(2);
 
   /** Peaks captured during current rep (keyed by phase name) */
   protected currentRepPeaks: Partial<Record<TPhase, TPeak>> = {};
@@ -87,8 +96,8 @@ export abstract class FormAnalyzerBase<
    */
   abstract processFrame(
     skeleton: Skeleton,
-    timestamp?: number,
-    videoTime?: number,
+    timestamp?: TimestampMs,
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult;
 
@@ -121,7 +130,7 @@ export abstract class FormAnalyzerBase<
     return this.phase;
   }
 
-  getRepCount(): number {
+  getRepCount(): RepCount {
     return this.repCount;
   }
 
@@ -134,8 +143,8 @@ export abstract class FormAnalyzerBase<
    * Clears base state and calls resetExerciseState() for exercise-specific cleanup.
    */
   reset(): void {
-    this.repCount = 0;
-    this.framesInPhase = 0;
+    this.repCount = asRepCount(0);
+    this.framesInPhase = asFrameCount(0);
     this.lastRepQuality = null;
     this.currentRepPeaks = {};
     this.resetExerciseState();
@@ -158,7 +167,7 @@ export abstract class FormAnalyzerBase<
    */
   protected transitionTo(newPhase: TPhase): void {
     this.phase = newPhase;
-    this.framesInPhase = 0;
+    this.framesInPhase = asFrameCount(0);
   }
 
   /**
@@ -174,7 +183,7 @@ export abstract class FormAnalyzerBase<
     repPositions: RepPosition[];
     repQuality: RepQuality;
   } {
-    this.repCount++;
+    this.repCount = asRepCount(this.repCount + 1);
     this.lastRepQuality = this.calculateRepQuality();
     const repPositions = this.convertPeaksToPositions();
     this.currentRepPeaks = {};

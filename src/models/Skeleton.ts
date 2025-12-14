@@ -1,10 +1,22 @@
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
 import {
+  type AngleDegrees,
+  asAngleDegrees,
+  asConfidence,
+  asHingeScore,
   asMetersPerSecond,
+  asPixelX,
+  asPixelY,
+  asWristHeightPixels,
+  type Confidence,
   DEFAULT_USER_HEIGHT_CM,
   type HeightCm,
+  type HingeScore,
   type MetersPerSecond,
+  type PixelX,
+  type PixelY,
   type Seconds,
+  type WristHeightPixels,
 } from '../utils/brandedTypes';
 
 /**
@@ -30,27 +42,27 @@ export class Skeleton {
   private keypointMapping: Record<string, number> = {};
 
   // Arm-to-spine angle cache (computed lazily)
-  private _armToSpineAngle: number | null = null;
+  private _armToSpineAngle: AngleDegrees | null = null;
 
   // Arm-to-vertical angle cache (computed lazily, keyed by preferredSide)
-  private _armToVerticalAngleCache: Map<string, number> = new Map();
+  private _armToVerticalAngleCache: Map<string, AngleDegrees> = new Map();
 
   // Hip angle cache (knee-hip-shoulder angle)
-  private _hipAngle: number | null = null;
+  private _hipAngle: AngleDegrees | null = null;
 
   // Knee angle cache (hip-knee-ankle angle)
-  private _kneeAngle: number | null = null;
+  private _kneeAngle: AngleDegrees | null = null;
 
   // Side-specific angle caches
-  private _kneeAngleBySide: Map<string, number> = new Map();
-  private _hipAngleBySide: Map<string, number> = new Map();
+  private _kneeAngleBySide: Map<string, AngleDegrees> = new Map();
+  private _hipAngleBySide: Map<string, AngleDegrees> = new Map();
 
   // Elbow angle cache (shoulder-elbow-wrist angle)
-  private _elbowAngle: number | null = null;
+  private _elbowAngle: AngleDegrees | null = null;
 
   // Wrist height cache (wrist Y relative to shoulder, positive = above)
   // Keyed by preferred side ('left', 'right', or 'auto')
-  private _wristHeightCache: Map<string, number> = new Map();
+  private _wristHeightCache: Map<string, WristHeightPixels> = new Map();
 
   // Timestamp for velocity calculations
   private _timestamp: number = 0;
@@ -106,8 +118,8 @@ export class Skeleton {
   /**
    * Get the spine angle from vertical (0 is upright)
    */
-  getSpineAngle(): number {
-    return this.spineAngle;
+  getSpineAngle(): AngleDegrees {
+    return asAngleDegrees(this.spineAngle);
   }
 
   /**
@@ -115,7 +127,7 @@ export class Skeleton {
    * This is the angle between the arm vector (shoulder to elbow) and
    * spine vector (hip to shoulder)
    */
-  getArmToSpineAngle(): number {
+  getArmToSpineAngle(): AngleDegrees {
     // If already calculated, return cached value
     if (this._armToSpineAngle !== null) {
       return this._armToSpineAngle;
@@ -168,18 +180,18 @@ export class Skeleton {
 
         // Use exterior angle instead of interior angle for more intuitive visual representation
         // When vectors are almost aligned, this will give a small angle
-        const exteriorAngleDeg = 180 - angleDeg;
+        const exteriorAngleDeg = asAngleDegrees(180 - angleDeg);
 
         this._armToSpineAngle = exteriorAngleDeg;
         return exteriorAngleDeg;
       } else {
-        this._armToSpineAngle = 0; // Default if keypoints not available
-        return 0;
+        this._armToSpineAngle = asAngleDegrees(0); // Default if keypoints not available
+        return asAngleDegrees(0);
       }
     } catch (e) {
       console.error('Error calculating arm-to-spine angle:', e);
-      this._armToSpineAngle = 0;
-      return 0;
+      this._armToSpineAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     }
   }
 
@@ -240,7 +252,7 @@ export class Skeleton {
    *                        For left-handed users, mirror the input skeleton data.
    *                        If not specified, falls back to heuristics (more vertical arm).
    */
-  getArmToVerticalAngle(preferredSide?: 'left' | 'right'): number {
+  getArmToVerticalAngle(preferredSide?: 'left' | 'right'): AngleDegrees {
     // Check cache keyed by preferredSide (undefined becomes 'auto')
     const cacheKey = preferredSide ?? 'auto';
     const cached = this._armToVerticalAngleCache.get(cacheKey);
@@ -354,18 +366,21 @@ export class Skeleton {
           angleDeg = -angleDeg;
         }
 
-        this._armToVerticalAngleCache.set(cacheKey, angleDeg);
-        return angleDeg;
+        const result = asAngleDegrees(angleDeg);
+        this._armToVerticalAngleCache.set(cacheKey, result);
+        return result;
       } else {
         // No complete arm pair found - log for debugging
         console.warn('Missing keypoints for arm-to-vertical angle calculation');
-        this._armToVerticalAngleCache.set(cacheKey, 0); // Default if keypoints not available
-        return 0;
+        const defaultAngle = asAngleDegrees(0);
+        this._armToVerticalAngleCache.set(cacheKey, defaultAngle); // Default if keypoints not available
+        return defaultAngle;
       }
     } catch (e) {
       console.error('Error calculating arm-to-vertical angle:', e);
-      this._armToVerticalAngleCache.set(cacheKey, 0);
-      return 0;
+      const defaultAngle = asAngleDegrees(0);
+      this._armToVerticalAngleCache.set(cacheKey, defaultAngle);
+      return defaultAngle;
     }
   }
 
@@ -467,13 +482,15 @@ export class Skeleton {
   /**
    * Get the average confidence score of keypoints
    */
-  getConfidence(): number {
+  getConfidence(): Confidence {
     const scores = this.keypoints
       .filter((kp) => kp.score !== undefined)
       .map((kp) => kp.score || 0);
 
-    if (scores.length === 0) return 0;
-    return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    if (scores.length === 0) return asConfidence(0);
+    return asConfidence(
+      scores.reduce((sum, score) => sum + score, 0) / scores.length
+    );
   }
 
   /**
@@ -484,7 +501,7 @@ export class Skeleton {
     point1: PoseKeypoint,
     vertex: PoseKeypoint,
     point2: PoseKeypoint
-  ): number {
+  ): AngleDegrees {
     // Vector from vertex to point1
     const v1 = {
       x: point1.x - vertex.x,
@@ -505,11 +522,11 @@ export class Skeleton {
     const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
 
     // Avoid division by zero
-    if (mag1 === 0 || mag2 === 0) return 0;
+    if (mag1 === 0 || mag2 === 0) return asAngleDegrees(0);
 
     // Calculate angle in radians and convert to degrees
     const cosAngle = Math.min(Math.max(dotProduct / (mag1 * mag2), -1), 1);
-    return Math.acos(cosAngle) * (180 / Math.PI);
+    return asAngleDegrees(Math.acos(cosAngle) * (180 / Math.PI));
   }
 
   /**
@@ -525,7 +542,7 @@ export class Skeleton {
    *
    * This is the PRIMARY indicator of hinge vs squat pattern.
    */
-  getHipAngle(): number {
+  getHipAngle(): AngleDegrees {
     if (this._hipAngle !== null) {
       return this._hipAngle;
     }
@@ -546,12 +563,12 @@ export class Skeleton {
         return this._hipAngle;
       }
 
-      this._hipAngle = 0;
-      return 0;
+      this._hipAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     } catch (e) {
       console.error('Error calculating hip angle:', e);
-      this._hipAngle = 0;
-      return 0;
+      this._hipAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     }
   }
 
@@ -568,7 +585,7 @@ export class Skeleton {
    *
    * If knee angle drops below ~130° at bottom, it indicates SQUATTING not HINGING.
    */
-  getKneeAngle(): number {
+  getKneeAngle(): AngleDegrees {
     if (this._kneeAngle !== null) {
       return this._kneeAngle;
     }
@@ -589,12 +606,12 @@ export class Skeleton {
         return this._kneeAngle;
       }
 
-      this._kneeAngle = 0;
-      return 0;
+      this._kneeAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     } catch (e) {
       console.error('Error calculating knee angle:', e);
-      this._kneeAngle = 0;
-      return 0;
+      this._kneeAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     }
   }
 
@@ -604,7 +621,7 @@ export class Skeleton {
    * @param side - Which leg to measure ('left' or 'right')
    * @returns Angle in degrees, where ~180° = straight leg, ~90° = deep squat
    */
-  getKneeAngleForSide(side: 'left' | 'right'): number {
+  getKneeAngleForSide(side: 'left' | 'right'): AngleDegrees {
     const cached = this._kneeAngleBySide.get(side);
     if (cached !== undefined) {
       return cached;
@@ -629,12 +646,14 @@ export class Skeleton {
       console.debug(
         `[Skeleton] Missing keypoints for ${side} knee angle (hip/knee/ankle). Using fallback 180°.`
       );
-      this._kneeAngleBySide.set(side, 180);
-      return 180;
+      const fallback = asAngleDegrees(180);
+      this._kneeAngleBySide.set(side, fallback);
+      return fallback;
     } catch (e) {
       console.error(`Error calculating knee angle for ${side} side:`, e);
-      this._kneeAngleBySide.set(side, 180);
-      return 180;
+      const fallback = asAngleDegrees(180);
+      this._kneeAngleBySide.set(side, fallback);
+      return fallback;
     }
   }
 
@@ -644,7 +663,7 @@ export class Skeleton {
    * @param side - Which leg to measure ('left' or 'right')
    * @returns Angle in degrees, where ~180° = standing upright, ~90° = deep hinge
    */
-  getHipAngleForSide(side: 'left' | 'right'): number {
+  getHipAngleForSide(side: 'left' | 'right'): AngleDegrees {
     const cached = this._hipAngleBySide.get(side);
     if (cached !== undefined) {
       return cached;
@@ -669,12 +688,14 @@ export class Skeleton {
       console.debug(
         `[Skeleton] Missing keypoints for ${side} hip angle (knee/hip/shoulder). Using fallback 180°.`
       );
-      this._hipAngleBySide.set(side, 180);
-      return 180;
+      const fallback = asAngleDegrees(180);
+      this._hipAngleBySide.set(side, fallback);
+      return fallback;
     } catch (e) {
       console.error(`Error calculating hip angle for ${side} side:`, e);
-      this._hipAngleBySide.set(side, 180);
-      return 180;
+      const fallback = asAngleDegrees(180);
+      this._hipAngleBySide.set(side, fallback);
+      return fallback;
     }
   }
 
@@ -716,7 +737,7 @@ export class Skeleton {
    * - At Hang: ~170-180° (arms nearly straight)
    * - At Top: ~45-70° (chin over bar)
    */
-  getElbowAngle(): number {
+  getElbowAngle(): AngleDegrees {
     if (this._elbowAngle !== null) {
       return this._elbowAngle;
     }
@@ -742,12 +763,12 @@ export class Skeleton {
         return this._elbowAngle;
       }
 
-      this._elbowAngle = 0;
-      return 0;
+      this._elbowAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     } catch (e) {
       console.error('Error calculating elbow angle:', e);
-      this._elbowAngle = 0;
-      return 0;
+      this._elbowAngle = asAngleDegrees(0);
+      return asAngleDegrees(0);
     }
   }
 
@@ -770,7 +791,7 @@ export class Skeleton {
    *                        For left-handed users, mirror the input skeleton data.
    *                        If not specified, uses the wrist with higher confidence score.
    */
-  getWristHeight(preferredSide?: 'left' | 'right'): number {
+  getWristHeight(preferredSide?: 'left' | 'right'): WristHeightPixels {
     const cacheKey = preferredSide ?? 'auto';
     const cached = this._wristHeightCache.get(cacheKey);
     if (cached !== undefined) {
@@ -785,8 +806,9 @@ export class Skeleton {
       const rightWrist = this.getKeypointByName('rightWrist');
 
       if (!leftShoulder || !rightShoulder) {
-        this._wristHeightCache.set(cacheKey, 0);
-        return 0;
+        const zero = asWristHeightPixels(0);
+        this._wristHeightCache.set(cacheKey, zero);
+        return zero;
       }
 
       // Calculate shoulder midpoint Y
@@ -821,19 +843,21 @@ export class Skeleton {
         wristY = leftWrist.y;
       } else {
         // No reliable wrist data
-        this._wristHeightCache.set(cacheKey, 0);
-        return 0;
+        const zero = asWristHeightPixels(0);
+        this._wristHeightCache.set(cacheKey, zero);
+        return zero;
       }
 
       // In screen coordinates, Y increases downward
       // So shoulder_y - wrist_y = positive when wrist is ABOVE shoulder
-      const height = shoulderMidY - wristY;
+      const height = asWristHeightPixels(shoulderMidY - wristY);
       this._wristHeightCache.set(cacheKey, height);
       return height;
     } catch (e) {
       console.error('Error calculating wrist height:', e);
-      this._wristHeightCache.set(cacheKey, 0);
-      return 0;
+      const zero = asWristHeightPixels(0);
+      this._wristHeightCache.set(cacheKey, zero);
+      return zero;
     }
   }
 
@@ -925,7 +949,7 @@ export class Skeleton {
     point1Name: string,
     vertexName: string,
     point2Name: string
-  ): number | null {
+  ): AngleDegrees | null {
     try {
       const point1 = this.getKeypointByName(point1Name);
       const vertex = this.getKeypointByName(vertexName);
@@ -956,14 +980,14 @@ export class Skeleton {
     minConfidence: number = 0.2,
     padding: number = 0.2
   ): {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
+    minX: PixelX;
+    minY: PixelY;
+    maxX: PixelX;
+    maxY: PixelY;
     width: number;
     height: number;
-    centerX: number;
-    centerY: number;
+    centerX: PixelX;
+    centerY: PixelY;
   } | null {
     // Filter keypoints with sufficient confidence
     const visibleKeypoints = this.keypoints.filter((kp) => {
@@ -992,15 +1016,15 @@ export class Skeleton {
     const padX = rawWidth * padding;
     const padY = rawHeight * padding;
 
-    const minX = rawMinX - padX;
-    const maxX = rawMaxX + padX;
-    const minY = rawMinY - padY;
-    const maxY = rawMaxY + padY;
+    const minX = asPixelX(rawMinX - padX);
+    const maxX = asPixelX(rawMaxX + padX);
+    const minY = asPixelY(rawMinY - padY);
+    const maxY = asPixelY(rawMaxY + padY);
 
     const width = maxX - minX;
     const height = maxY - minY;
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
+    const centerX = asPixelX((minX + maxX) / 2);
+    const centerY = asPixelY((minY + maxY) / 2);
 
     return { minX, minY, maxX, maxY, width, height, centerX, centerY };
   }
@@ -1020,7 +1044,7 @@ export class Skeleton {
   getHingeVsSquatScore(
     standingHipAngle: number = 170,
     standingKneeAngle: number = 175
-  ): number {
+  ): HingeScore {
     const currentHipAngle = this.getHipAngle();
     const currentKneeAngle = this.getKneeAngle();
 
@@ -1031,7 +1055,7 @@ export class Skeleton {
     // Avoid division by zero
     const totalFlexion = hipFlexion + kneeFlexion;
     if (totalFlexion < 5) {
-      return 0; // Not enough flexion to determine pattern
+      return asHingeScore(0); // Not enough flexion to determine pattern
     }
 
     // Hinge ratio: how much of the total flexion is at the hip
@@ -1043,6 +1067,6 @@ export class Skeleton {
     // hingeRatio of 0.7+ = good hinge (+1)
     // hingeRatio of 0.3- = squat (-1)
     // hingeRatio of 0.5 = neutral (0)
-    return (hingeRatio - 0.5) * 2;
+    return asHingeScore((hingeRatio - 0.5) * 2);
   }
 }
