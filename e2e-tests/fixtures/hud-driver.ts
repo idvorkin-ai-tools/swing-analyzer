@@ -59,9 +59,9 @@ export class HudDriver {
         return match ? parseFloat(match[1]) : null;
       };
 
-      const spineEl = document.querySelector('#spine-angle');
-      const armEl = document.querySelector('#arm-angle');
-      const speedEl = document.querySelector('#wrist-velocity');
+      const spineEl = document.querySelector('#hud-spineAngle');
+      const armEl = document.querySelector('#hud-armAngle');
+      const speedEl = document.querySelector('#hud-speed');
       const positionEl = document.querySelector(
         '.hud-overlay-position .hud-overlay-angle-value'
       );
@@ -79,7 +79,7 @@ export class HudDriver {
    * Get spine angle value
    */
   async getSpineAngle(): Promise<number | null> {
-    const text = await this.page.locator('#spine-angle').textContent();
+    const text = await this.page.locator('#hud-spineAngle').textContent();
     const match = text?.match(/(-?\d+)/);
     return match ? parseInt(match[1], 10) : null;
   }
@@ -88,7 +88,7 @@ export class HudDriver {
    * Get arm angle value
    */
   async getArmAngle(): Promise<number | null> {
-    const text = await this.page.locator('#arm-angle').textContent();
+    const text = await this.page.locator('#hud-armAngle').textContent();
     const match = text?.match(/(-?\d+)/);
     return match ? parseInt(match[1], 10) : null;
   }
@@ -97,7 +97,7 @@ export class HudDriver {
    * Get wrist speed value in m/s
    */
   async getSpeed(): Promise<number | null> {
-    const text = await this.page.locator('#wrist-velocity').textContent();
+    const text = await this.page.locator('#hud-speed').textContent();
     const match = text?.match(/(-?\d+\.?\d*)/);
     return match ? parseFloat(match[1]) : null;
   }
