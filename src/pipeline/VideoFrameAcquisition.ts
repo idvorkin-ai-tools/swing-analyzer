@@ -181,10 +181,18 @@ export class VideoFrameAcquisition implements FrameAcquisition {
       // Set up event listeners
       const handleError = () => {
         cleanup();
+        const mediaError = this.videoElement.error;
+        const errorDetails = mediaError
+          ? `code=${mediaError.code}, message=${mediaError.message || 'none'}`
+          : 'no MediaError';
         console.error(
-          `[DEBUG] VideoFrameAcquisition.loadVideoFromURL: Error event triggered for ${url}`
+          `[DEBUG] VideoFrameAcquisition.loadVideoFromURL: Error event triggered for ${url} (${errorDetails})`
         );
-        reject(new Error(`Failed to load video from URL: ${url}`));
+        reject(
+          new Error(
+            `Failed to load video: ${mediaError?.message || 'Unknown error'} (MediaError code ${mediaError?.code || 'N/A'})`
+          )
+        );
       };
 
       const handleLoaded = () => {

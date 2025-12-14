@@ -527,7 +527,15 @@ class SessionRecorderImpl {
         timestamp: Date.now(),
         details: {
           message: args
-            .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
+            .map((a) => {
+              if (typeof a === 'string') return a;
+              if (a instanceof Error) return `${a.name}: ${a.message}`;
+              try {
+                return JSON.stringify(a);
+              } catch {
+                return String(a);
+              }
+            })
             .join(' '),
         },
       });
