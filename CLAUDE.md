@@ -219,6 +219,58 @@ Actions requiring explicit "YES" approval from user:
 3. Ask user if they want to merge any immediately into CLAUDE.md
 4. For generalizable patterns, offer to PR to chop-conventions
 
+## Weekly Retros
+
+Run retros weekly (or when user says "retro") to review human-AI collaboration patterns.
+
+**Storage:** `.claude/retros/` in project root
+
+- `_retro_state.json` - Tracks last run, covers all project instances
+- `YYYY-MM-DD.md` - Individual retro reports
+
+**Data sources:**
+
+1. **Claude logs** (`~/.claude/history.jsonl`) - User messages, corrections, friction patterns
+2. **Claude stats** (`~/.claude/stats-cache.json`) - Daily message/session/tool counts
+3. **Git history** - Commits, branches, PRs merged
+4. **Beads** - Issues closed, cycle time, discovered-from chains
+
+**Running a retro:**
+
+```bash
+# Usage stats for last week
+cat ~/.claude/stats-cache.json | jq '.dailyActivity[] | select(.date >= "YYYY-MM-DD")'
+
+# Messages by project
+cat ~/.claude/history.jsonl | jq -r 'select(.timestamp >= EPOCH_MS) | .project' | sort | uniq -c | sort -rn
+
+# Friction patterns (corrections)
+cat ~/.claude/history.jsonl | jq -r 'select(.timestamp >= EPOCH_MS) | .display' | grep -iE "^no[,. ]|wrong|try again|broken|stuck"
+
+# Git activity across all instances
+for dir in ~/gits/swing-*; do
+  git -C "$dir" log --since="1 week ago" --oneline | wc -l
+done
+```
+
+**Retro template sections:**
+
+1. **Summary Metrics** - Messages, sessions, commits per instance
+2. **What Went Well** - Features delivered, PRs merged, process wins
+3. **What Didn't Go Well** - Friction patterns, rework, confusion
+4. **Action Items** - Process improvements, docs updates, tech debt
+
+**Multi-instance projects:** Retros cover ALL instances (swing-2 through swing-7) since they share the same codebase. Store retro in primary working clone.
+
+**Privacy check before committing retros:**
+
+```bash
+# Scan for sensitive patterns
+grep -iE "token|tskey|secret|password|api.key|credential|auth-key" .claude/retros/*.md
+```
+
+Warn user if any matches found. Common false positives: "keypoint", "key files".
+
 ## Task Tracking (Beads)
 
 This project uses [beads](https://github.com/steveyegge/beads) for issue tracking. Run `bd prime` at session start for workflow context.
