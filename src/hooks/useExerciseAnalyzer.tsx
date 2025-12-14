@@ -160,6 +160,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const [repCount, setRepCount] = useState<number>(0);
   const [spineAngle, setSpineAngle] = useState<number>(0);
   const [armToSpineAngle, setArmToSpineAngle] = useState<number>(0);
+  const [wristVelocity, setWristVelocity] = useState<number>(0);
   const [repThumbnails, setRepThumbnails] = useState<
     Map<number, Map<string, PositionCandidate>>
   >(new Map());
@@ -538,30 +539,39 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // HUD Update Helper
   // ========================================
   // Updates HUD display from a skeleton (called during playback and seek)
-  const updateHudFromSkeleton = useCallback((skeleton: Skeleton) => {
-    setSpineAngle(Math.round(skeleton.getSpineAngle() || 0));
-    setArmToSpineAngle(Math.round(skeleton.getArmToVerticalAngle() || 0));
+  // Uses precomputed speed (smoothed, computed in one-time pass after pose extraction)
+  const updateHudFromSkeleton = useCallback(
+    (skeleton: Skeleton, _videoTime?: number, precomputedSpeed?: number) => {
+      setSpineAngle(Math.round(skeleton.getSpineAngle() || 0));
+      setArmToSpineAngle(Math.round(skeleton.getArmToVerticalAngle() || 0));
 
-    // Estimate position from spine angle (stateless, for HUD display during seek)
-    // Position thresholds based on spine angle:
-    //   top: ~10° (upright), connect: ~45°, release: ~37°, bottom: ~75° (hinged)
-    const spine = skeleton.getSpineAngle() || 0;
-    let position: string | null = null;
+      // Use precomputed speed (smoothed, computed during pose loading)
+      if (precomputedSpeed !== undefined) {
+        setWristVelocity(precomputedSpeed);
+      }
 
-    if (spine < 25) {
-      position = 'Top';
-    } else if (spine >= 25 && spine < 41) {
-      position = 'Release'; // ~37° ideal
-    } else if (spine >= 41 && spine < 60) {
-      position = 'Connect'; // ~45° ideal
-    } else if (spine >= 60) {
-      position = 'Bottom'; // ~75° ideal
-    }
+      // Estimate position from spine angle (stateless, for HUD display during seek)
+      // Position thresholds based on spine angle:
+      //   top: ~10° (upright), connect: ~45°, release: ~37°, bottom: ~75° (hinged)
+      const spine = skeleton.getSpineAngle() || 0;
+      let position: string | null = null;
 
-    if (position) {
-      setStatus(position);
-    }
-  }, []);
+      if (spine < 25) {
+        position = 'Top';
+      } else if (spine >= 25 && spine < 41) {
+        position = 'Release'; // ~37° ideal
+      } else if (spine >= 41 && spine < 60) {
+        position = 'Connect'; // ~45° ideal
+      } else if (spine >= 60) {
+        position = 'Bottom'; // ~75° ideal
+      }
+
+      if (position) {
+        setStatus(position);
+      }
+    },
+    []
+  );
 
   // ========================================
   // Skeleton Event Handler
@@ -748,7 +758,11 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             const hasPoses = !!skeletonEvent?.skeleton;
             setHasPosesForCurrentFrame(hasPoses);
             if (skeletonEvent?.skeleton) {
-              updateHudFromSkeleton(skeletonEvent.skeleton);
+              updateHudFromSkeleton(
+                skeletonEvent.skeleton,
+                video.currentTime,
+                skeletonEvent.precomputedAngles?.wristSpeed
+              );
               // Also render skeleton on canvas
               if (skeletonRendererRef.current) {
                 skeletonRendererRef.current.renderSkeleton(
@@ -909,8 +923,12 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
               now
             );
           }
-          // Update HUD with current frame's data
-          updateHudFromSkeleton(skeletonEvent.skeleton);
+          // Update HUD with current frame's data (uses precomputed speed)
+          updateHudFromSkeleton(
+            skeletonEvent.skeleton,
+            metadata.mediaTime,
+            skeletonEvent.precomputedAngles?.wristSpeed
+          );
         }
 
         // Throttled rep/position sync (every REP_SYNC_INTERVAL_MS)
@@ -981,8 +999,12 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             performance.now()
           );
         }
-        // Update HUD with current frame's data
-        updateHudFromSkeleton(skeletonEvent.skeleton);
+        // Update HUD with current frame's data (uses precomputed speed)
+        updateHudFromSkeleton(
+          skeletonEvent.skeleton,
+          video.currentTime,
+          skeletonEvent.precomputedAngles?.wristSpeed
+        );
       }
 
       // Sync rep counter and position to seek location (immediate, not throttled)
@@ -1611,6 +1633,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     repCount,
     spineAngle,
     armToSpineAngle,
+    wristVelocity,
     isPlaying,
     videoStartTime: null, // Not tracked in V2
     isFullscreen,

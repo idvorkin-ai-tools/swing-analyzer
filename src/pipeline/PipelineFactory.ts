@@ -139,6 +139,7 @@ export function buildSkeletonEventFromFrame(
         frameImage: frame.frameImage, // Pass through thumbnail for filmstrip
       },
     },
+    precomputedAngles: frame.angles,
   };
 }
 
@@ -146,7 +147,9 @@ export function buildSkeletonEventFromFrame(
  * Build a Skeleton from keypoints.
  * Expects MediaPipe-33 format (33 keypoints).
  */
-function buildSkeletonFromFrame(keypoints: PoseKeypoint[]): Skeleton | null {
+export function buildSkeletonFromFrame(
+  keypoints: PoseKeypoint[]
+): Skeleton | null {
   if (!keypoints || keypoints.length === 0) {
     return null;
   }

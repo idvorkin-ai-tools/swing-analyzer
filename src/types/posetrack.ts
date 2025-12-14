@@ -97,6 +97,9 @@ export interface PrecomputedAngles {
 
   /** Knee angle in degrees (optional) */
   kneeAngle?: number;
+
+  /** Wrist speed in m/s (smoothed over ~5 frames) */
+  wristSpeed?: number;
 }
 
 /**

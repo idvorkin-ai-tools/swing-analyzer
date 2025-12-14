@@ -23,6 +23,7 @@ import type {
   PoseTrackFile,
   PoseTrackFrame,
 } from '../types/posetrack';
+import { computeFrameSpeeds } from '../utils/speedComputation';
 import { computeQuickVideoHash } from '../utils/videoHash';
 import { LivePoseCache } from './LivePoseCache';
 import { buildSkeletonEventFromFrame } from './PipelineFactory';
@@ -133,6 +134,20 @@ export class VideoFileSkeletonSource implements SkeletonSource {
       if (cached) {
         // Use cached data
         this.poseTrack = cached;
+
+        // Compute speeds if not already present (one-time pass with smoothing)
+        const hasSpeeds = cached.frames.some(
+          (f) => f.angles?.wristSpeed != null
+        );
+        if (!hasSpeeds && cached.frames.length > 0) {
+          console.log(
+            '[VideoFileSkeletonSource] Computing smoothed speeds for',
+            cached.frames.length,
+            'frames'
+          );
+          computeFrameSpeeds(cached.frames);
+        }
+
         this.liveCache = LivePoseCache.fromPoseTrackFile(cached);
         this.stateSubject.next({ type: 'active' });
 
@@ -356,10 +371,20 @@ export class VideoFileSkeletonSource implements SkeletonSource {
       // Mark cache complete
       this.liveCache.markComplete(result.poseTrack.metadata);
 
+      // Compute smoothed speeds for all frames (one-time pass)
+      if (result.poseTrack.frames.length > 0) {
+        console.log(
+          '[VideoFileSkeletonSource] Computing smoothed speeds for',
+          result.poseTrack.frames.length,
+          'extracted frames'
+        );
+        computeFrameSpeeds(result.poseTrack.frames);
+      }
+
       // Store final pose track
       this.poseTrack = result.poseTrack;
 
-      // Auto-save to storage
+      // Auto-save to storage (with speeds included)
       await savePoseTrackToStorage(result.poseTrack);
 
       this.stateSubject.next({ type: 'active' });

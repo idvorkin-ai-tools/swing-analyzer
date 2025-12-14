@@ -47,6 +47,7 @@ const VideoSectionV2: React.FC = () => {
     // HUD data
     spineAngle,
     armToSpineAngle,
+    wristVelocity,
     // HUD visibility (based on pose availability, not extraction state)
     hasPosesForCurrentFrame,
     currentPosition,
@@ -376,6 +377,16 @@ const VideoSectionV2: React.FC = () => {
                     <span className="hud-overlay-angle-label">ARM</span>
                     <span id="arm-angle" className="hud-overlay-angle-value">
                       {armToSpineAngle}°
+                    </span>
+                  </div>
+                  <div className="hud-overlay-angle">
+                    <span className="hud-overlay-angle-label">SPEED</span>
+                    <span
+                      id="wrist-velocity"
+                      className="hud-overlay-angle-value"
+                    >
+                      {(wristVelocity ?? 0).toFixed(1)}
+                      <span className="hud-overlay-unit">m/s</span>
                     </span>
                   </div>
                   {currentPosition && (
