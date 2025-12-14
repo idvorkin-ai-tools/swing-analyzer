@@ -2,6 +2,7 @@ import type { Observable } from 'rxjs';
 import type { Skeleton } from '../models/Skeleton';
 import type { SwingPositionName } from '../types';
 import type { PrecomputedAngles } from '../types/posetrack';
+import type { TimestampMs, VideoTimeSeconds } from '../utils/brandedTypes';
 import type { PoseEvent } from './PoseSkeletonTransformer';
 
 /**
@@ -29,8 +30,8 @@ export interface FrameAcquisition {
  */
 export interface FrameEvent {
   frame: HTMLCanvasElement | HTMLVideoElement;
-  timestamp: number;
-  videoTime?: number; // video.currentTime in seconds (for seeking)
+  timestamp: TimestampMs;
+  videoTime?: VideoTimeSeconds; // video.currentTime in seconds (for seeking)
 
   /**
    * Frame image captured during extraction.

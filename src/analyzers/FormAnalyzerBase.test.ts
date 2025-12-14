@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Skeleton } from '../models/Skeleton';
+import {
+  asFrameCount,
+  asQualityScore,
+  asTimestampMs,
+  asVideoTimeSeconds,
+  type FrameCount,
+  type TimestampMs,
+  type VideoTimeSeconds,
+} from '../utils/brandedTypes';
 import { createBasicMockSkeleton } from './__test-helpers__';
 import type {
   FormAnalyzerResult,
@@ -57,7 +66,7 @@ class TestFormAnalyzer extends FormAnalyzerBase<
   public get _framesInPhase() {
     return this.framesInPhase;
   }
-  public set _framesInPhase(f: number) {
+  public set _framesInPhase(f: FrameCount) {
     this.framesInPhase = f;
   }
   public get _currentRepPeaks() {
@@ -70,8 +79,8 @@ class TestFormAnalyzer extends FormAnalyzerBase<
 
   processFrame(
     skeleton: Skeleton,
-    timestamp = Date.now(),
-    videoTime?: number,
+    timestamp: TimestampMs = asTimestampMs(Date.now()),
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult {
     const angles: TestAngles = { angle1: 45, angle2: 90 };
@@ -124,8 +133,8 @@ class TestFormAnalyzer extends FormAnalyzerBase<
 
   private createPeak(
     skeleton: Skeleton,
-    timestamp: number,
-    videoTime: number | undefined,
+    timestamp: TimestampMs,
+    videoTime: VideoTimeSeconds | undefined,
     angles: TestAngles,
     frameImage?: ImageData
   ): TestPeak {
@@ -134,7 +143,7 @@ class TestFormAnalyzer extends FormAnalyzerBase<
       skeleton,
       timestamp,
       videoTime,
-      score: angles.angle1,
+      score: asQualityScore(angles.angle1),
       angles: { ...angles },
       frameImage,
     };
@@ -163,7 +172,7 @@ class TestFormAnalyzer extends FormAnalyzerBase<
       this.metrics.maxAngle1 + (180 - this.metrics.minAngle2)
     );
     return {
-      score,
+      score: asQualityScore(score),
       metrics: { ...this.metrics },
       feedback: score >= 80 ? ['Great job!'] : ['Keep practicing'],
     };
@@ -229,18 +238,18 @@ describe('FormAnalyzerBase', () => {
 
   describe('canTransition()', () => {
     it('returns false when framesInPhase < minFramesInPhase', () => {
-      analyzer._framesInPhase = 0;
+      analyzer._framesInPhase = asFrameCount(0);
       expect(analyzer._canTransition()).toBe(false);
 
-      analyzer._framesInPhase = 1;
+      analyzer._framesInPhase = asFrameCount(1);
       expect(analyzer._canTransition()).toBe(false);
     });
 
     it('returns true when framesInPhase >= minFramesInPhase', () => {
-      analyzer._framesInPhase = 2;
+      analyzer._framesInPhase = asFrameCount(2);
       expect(analyzer._canTransition()).toBe(true);
 
-      analyzer._framesInPhase = 5;
+      analyzer._framesInPhase = asFrameCount(5);
       expect(analyzer._canTransition()).toBe(true);
     });
   });
@@ -253,7 +262,7 @@ describe('FormAnalyzerBase', () => {
     });
 
     it('resets framesInPhase to 0', () => {
-      analyzer._framesInPhase = 5;
+      analyzer._framesInPhase = asFrameCount(5);
       analyzer._transitionTo('middle');
       expect(analyzer._framesInPhase).toBe(0);
     });
@@ -265,9 +274,9 @@ describe('FormAnalyzerBase', () => {
       const peak: TestPeak = {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        videoTime: 1.0,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        videoTime: asVideoTimeSeconds(1.0),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
       };
 
@@ -284,15 +293,15 @@ describe('FormAnalyzerBase', () => {
       const peak1: TestPeak = {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
       };
       const peak2: TestPeak = {
         phase: 'start',
         skeleton,
-        timestamp: 200,
-        score: 75,
+        timestamp: asTimestampMs(200),
+        score: asQualityScore(75),
         angles: { angle1: 60, angle2: 80 },
       };
 
@@ -308,17 +317,17 @@ describe('FormAnalyzerBase', () => {
       const startPeak: TestPeak = {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        videoTime: 1.0,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        videoTime: asVideoTimeSeconds(1.0),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
       };
       const middlePeak: TestPeak = {
         phase: 'middle',
         skeleton,
-        timestamp: 200,
-        videoTime: 2.0,
-        score: 60,
+        timestamp: asTimestampMs(200),
+        videoTime: asVideoTimeSeconds(2.0),
+        score: asQualityScore(60),
         angles: { angle1: 50, angle2: 85 },
       };
 
@@ -349,8 +358,8 @@ describe('FormAnalyzerBase', () => {
       const peak: TestPeak = {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
         frameImage: mockImageData,
       };
@@ -386,8 +395,8 @@ describe('FormAnalyzerBase', () => {
       analyzer._storePeak('start', {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
       });
 
@@ -404,8 +413,8 @@ describe('FormAnalyzerBase', () => {
       analyzer._storePeak('start', {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
       });
 
@@ -426,7 +435,7 @@ describe('FormAnalyzerBase', () => {
     });
 
     it('resets framesInPhase to 0', () => {
-      analyzer._framesInPhase = 10;
+      analyzer._framesInPhase = asFrameCount(10);
       analyzer.reset();
       expect(analyzer._framesInPhase).toBe(0);
     });
@@ -444,8 +453,8 @@ describe('FormAnalyzerBase', () => {
       analyzer._storePeak('start', {
         phase: 'start',
         skeleton,
-        timestamp: 100,
-        score: 50,
+        timestamp: asTimestampMs(100),
+        score: asQualityScore(50),
         angles: { angle1: 45, angle2: 90 },
       });
 
@@ -473,7 +482,7 @@ describe('FormAnalyzerBase', () => {
       const results: FormAnalyzerResult[] = [];
 
       for (let i = 0; i < 8; i++) {
-        results.push(analyzer.processFrame(skeleton, i * 10));
+        results.push(analyzer.processFrame(skeleton, asTimestampMs(i * 10)));
       }
 
       // Find the result where rep completed
@@ -490,13 +499,13 @@ describe('FormAnalyzerBase', () => {
 
       // Complete first rep
       for (let i = 0; i < 8; i++) {
-        analyzer.processFrame(skeleton, i * 10);
+        analyzer.processFrame(skeleton, asTimestampMs(i * 10));
       }
       expect(analyzer.getRepCount()).toBe(1);
 
       // Complete second rep
       for (let i = 0; i < 8; i++) {
-        analyzer.processFrame(skeleton, 100 + i * 10);
+        analyzer.processFrame(skeleton, asTimestampMs(100 + i * 10));
       }
       expect(analyzer.getRepCount()).toBe(2);
     });

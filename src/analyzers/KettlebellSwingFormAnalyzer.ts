@@ -16,7 +16,18 @@
  */
 
 import type { Skeleton } from '../models/Skeleton';
-import { type AngleDegrees, asAngleDegrees } from '../utils/brandedTypes';
+import {
+  type AngleDegrees,
+  asAngleDegrees,
+  asFrameCount,
+  asQualityScore,
+  asTimestampMs,
+  type FrameCount,
+  type QualityScore,
+  type TimestampMs,
+  type VideoTimeSeconds,
+  type WristHeightPixels,
+} from '../utils/brandedTypes';
 import type {
   FormAnalyzerResult,
   RepPosition,
@@ -123,8 +134,8 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
   private currentPhasePeak: SwingPhasePeak | null = null;
 
   // Wrist height history for peak detection
-  private wristHeightHistory: number[] = [];
-  private readonly wristHeightWindowSize = 5;
+  private wristHeightHistory: WristHeightPixels[] = [];
+  private readonly wristHeightWindowSize: FrameCount = asFrameCount(5);
 
   constructor(thresholds: Partial<SwingThresholds> = {}) {
     super('top');
@@ -140,8 +151,8 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
    */
   processFrame(
     skeleton: Skeleton,
-    timestamp: number = Date.now(),
-    videoTime?: number,
+    timestamp: TimestampMs = asTimestampMs(Date.now()),
+    videoTime?: VideoTimeSeconds,
     frameImage?: ImageData
   ): FormAnalyzerResult {
     // Always use right arm - for left-handed users, mirror the skeleton data
@@ -167,7 +178,7 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
     this.updatePhasePeak(skeleton, timestamp, videoTime, angles, frameImage);
 
     // Increment frames in current phase
-    this.framesInPhase++;
+    this.framesInPhase = asFrameCount(this.framesInPhase + 1);
 
     // Check for phase transitions
     let repCompleted = false;
@@ -224,8 +235,8 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
    */
   private updatePhasePeak(
     skeleton: Skeleton,
-    timestamp: number,
-    videoTime: number | undefined,
+    timestamp: TimestampMs,
+    videoTime: VideoTimeSeconds | undefined,
     angles: SwingAngles,
     frameImage?: ImageData
   ): void {
@@ -265,23 +276,26 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
   /**
    * Calculate how "peak" this frame is for the given phase
    */
-  private calculatePeakScore(phase: SwingPhase, angles: SwingAngles): number {
+  private calculatePeakScore(
+    phase: SwingPhase,
+    angles: SwingAngles
+  ): QualityScore {
     switch (phase) {
       case 'top':
-        return angles.arm; // Highest arm = best lockout
+        return asQualityScore(angles.arm); // Highest arm = best lockout
       case 'connect':
-        return 90 - angles.arm; // Lower arm = better (arms vertical before hinge)
+        return asQualityScore(90 - angles.arm); // Lower arm = better (arms vertical before hinge)
       case 'bottom':
-        return angles.spine; // Highest spine = deepest hinge
+        return asQualityScore(angles.spine); // Highest spine = deepest hinge
       case 'release':
-        return 90 - angles.spine; // Lower spine = better (vertical when arms release)
+        return asQualityScore(90 - angles.spine); // Lower spine = better (vertical when arms release)
       default: {
         // Exhaustive check - TypeScript will error if a SwingPhase is unhandled
         const _exhaustiveCheck: never = phase;
         console.error(
           `calculatePeakScore: Unhandled phase "${_exhaustiveCheck}"`
         );
-        return 0;
+        return asQualityScore(0);
       }
     }
   }
@@ -515,7 +529,7 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
     }
 
     return {
-      score: Math.max(0, score),
+      score: asQualityScore(Math.max(0, score)),
       metrics: {
         hingeDepth: maxSpineAngle,
         lockoutAngle: maxArmAngle,

@@ -2,15 +2,21 @@ import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
 import {
   type AngleDegrees,
   asAngleDegrees,
+  asConfidence,
+  asHingeScore,
   asMetersPerSecond,
   asPixelX,
   asPixelY,
+  asWristHeightPixels,
+  type Confidence,
   DEFAULT_USER_HEIGHT_CM,
   type HeightCm,
+  type HingeScore,
   type MetersPerSecond,
   type PixelX,
   type PixelY,
   type Seconds,
+  type WristHeightPixels,
 } from '../utils/brandedTypes';
 
 /**
@@ -56,7 +62,7 @@ export class Skeleton {
 
   // Wrist height cache (wrist Y relative to shoulder, positive = above)
   // Keyed by preferred side ('left', 'right', or 'auto')
-  private _wristHeightCache: Map<string, number> = new Map();
+  private _wristHeightCache: Map<string, WristHeightPixels> = new Map();
 
   // Timestamp for velocity calculations
   private _timestamp: number = 0;
@@ -476,13 +482,15 @@ export class Skeleton {
   /**
    * Get the average confidence score of keypoints
    */
-  getConfidence(): number {
+  getConfidence(): Confidence {
     const scores = this.keypoints
       .filter((kp) => kp.score !== undefined)
       .map((kp) => kp.score || 0);
 
-    if (scores.length === 0) return 0;
-    return scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    if (scores.length === 0) return asConfidence(0);
+    return asConfidence(
+      scores.reduce((sum, score) => sum + score, 0) / scores.length
+    );
   }
 
   /**
@@ -783,7 +791,7 @@ export class Skeleton {
    *                        For left-handed users, mirror the input skeleton data.
    *                        If not specified, uses the wrist with higher confidence score.
    */
-  getWristHeight(preferredSide?: 'left' | 'right'): number {
+  getWristHeight(preferredSide?: 'left' | 'right'): WristHeightPixels {
     const cacheKey = preferredSide ?? 'auto';
     const cached = this._wristHeightCache.get(cacheKey);
     if (cached !== undefined) {
@@ -798,8 +806,9 @@ export class Skeleton {
       const rightWrist = this.getKeypointByName('rightWrist');
 
       if (!leftShoulder || !rightShoulder) {
-        this._wristHeightCache.set(cacheKey, 0);
-        return 0;
+        const zero = asWristHeightPixels(0);
+        this._wristHeightCache.set(cacheKey, zero);
+        return zero;
       }
 
       // Calculate shoulder midpoint Y
@@ -834,19 +843,21 @@ export class Skeleton {
         wristY = leftWrist.y;
       } else {
         // No reliable wrist data
-        this._wristHeightCache.set(cacheKey, 0);
-        return 0;
+        const zero = asWristHeightPixels(0);
+        this._wristHeightCache.set(cacheKey, zero);
+        return zero;
       }
 
       // In screen coordinates, Y increases downward
       // So shoulder_y - wrist_y = positive when wrist is ABOVE shoulder
-      const height = shoulderMidY - wristY;
+      const height = asWristHeightPixels(shoulderMidY - wristY);
       this._wristHeightCache.set(cacheKey, height);
       return height;
     } catch (e) {
       console.error('Error calculating wrist height:', e);
-      this._wristHeightCache.set(cacheKey, 0);
-      return 0;
+      const zero = asWristHeightPixels(0);
+      this._wristHeightCache.set(cacheKey, zero);
+      return zero;
     }
   }
 
@@ -1033,7 +1044,7 @@ export class Skeleton {
   getHingeVsSquatScore(
     standingHipAngle: number = 170,
     standingKneeAngle: number = 175
-  ): number {
+  ): HingeScore {
     const currentHipAngle = this.getHipAngle();
     const currentKneeAngle = this.getKneeAngle();
 
@@ -1044,7 +1055,7 @@ export class Skeleton {
     // Avoid division by zero
     const totalFlexion = hipFlexion + kneeFlexion;
     if (totalFlexion < 5) {
-      return 0; // Not enough flexion to determine pattern
+      return asHingeScore(0); // Not enough flexion to determine pattern
     }
 
     // Hinge ratio: how much of the total flexion is at the hip
@@ -1056,6 +1067,6 @@ export class Skeleton {
     // hingeRatio of 0.7+ = good hinge (+1)
     // hingeRatio of 0.3- = squat (-1)
     // hingeRatio of 0.5 = neutral (0)
-    return (hingeRatio - 0.5) * 2;
+    return asHingeScore((hingeRatio - 0.5) * 2);
   }
 }

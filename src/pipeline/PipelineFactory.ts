@@ -2,6 +2,7 @@ import type { ModelConfig } from '../config/modelConfig';
 import { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
 import type { PoseTrackFile, PoseTrackFrame } from '../types/posetrack';
+import { asTimestampMs, asVideoTimeSeconds } from '../utils/brandedTypes';
 import { CachedPoseSkeletonTransformer } from './CachedPoseSkeletonTransformer';
 import type { LivePoseCache } from './LivePoseCache';
 import { Pipeline } from './Pipeline';
@@ -134,8 +135,8 @@ export function buildSkeletonEventFromFrame(
         : null,
       frameEvent: {
         frame: null as unknown as HTMLCanvasElement, // Not needed for extraction
-        timestamp: frame.timestamp,
-        videoTime: frame.videoTime,
+        timestamp: asTimestampMs(frame.timestamp),
+        videoTime: asVideoTimeSeconds(frame.videoTime),
         frameImage: frame.frameImage, // Pass through thumbnail for filmstrip
       },
     },
