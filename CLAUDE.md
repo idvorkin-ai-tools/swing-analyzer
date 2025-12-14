@@ -212,6 +212,62 @@ Actions requiring explicit "YES" approval from user:
 
 **Encouraged** (not losing work): Deleting unused functions/files, removing commented-out code, cleaning unused imports - these are preserved in git history.
 
+## Workflow Lessons (from Retros)
+
+These are specific instructions extracted from user feedback patterns. Follow them.
+
+### Git Rules
+
+1. **Container rule**: If in a container, NEVER direct commit to main - always create a PR
+2. **Merge approval**: Only a HUMAN can merge to main - must get explicit uppercase YES
+3. **No force push**: Never do a force push. It's okay for history to be a mess on a branch
+4. **No --no-verify**: Don't use `commit --no-verify` unless absolutely necessary
+5. **Lint separately**: Make separate commits to clean up linting BEFORE the actual change
+6. **Rebase often**: When working in dev, other agents are pushing all the time - keep rebasing
+
+### Before Implementing
+
+1. **Spec first**: Spend time thinking. Make the spec before implementing
+2. **Confirm understanding**: Confirm you understand what was asked before you go crazy
+3. **Read existing code**: Look at existing code to understand what's already implemented
+4. **Update architecture docs**: Consider if architecture files need updating
+5. **Plan for context loss**: Make a plan in beads so work can continue if context is cleared
+
+### Think Like a Senior Dev
+
+When stuck or facing complex problems, adopt these mindsets:
+
+- "You are a really smart engineer - go figure out how to use playwright to see what happens"
+- "You are a test architect. Figure out how to do end-to-end testing for this project"
+- "I want you to be a really good PM and user researcher - make a recommendation"
+- "Look at my code to understand what I've already implemented so I don't have to give a list of recommendations"
+
+### Testing Rules
+
+1. **Both levels**: Add UTs AND an E2E test to make sure something is showing up in the UX
+2. **Tests must pass**: Make sure all tests pass then go through them in order
+3. **Include in precommit**: Make sure build passes, include it in linting, include in precommit
+4. **Don't delete tests**: Did you erase the files? Don't erase them on cleanup
+
+### Debugging Expectations
+
+1. **Use session recorder**: It's not working? Debug based on the session recorder
+2. **Self-diagnose**: Why can't you tell this from the session recording? What do you need to add?
+3. **Debug pages**: Generate debug log files on a debug page
+
+### Working Autonomously
+
+1. **Keep going**: You should be able to run by yourself for a long time! Keep going, use lots of subagents
+2. **Check agent instructions**: Say "check the agent instructions" to remember them
+3. **Don't wait**: User expects Claude to keep working with subagents without waiting
+
+### Architectural Patterns
+
+1. **Streaming over batching**: We shouldn't need to batch anything. It should all be streamed through
+2. **Precomputed only**: Never computing on a phone. Either it's precomputed on disk or precomputed at the same time
+3. **React over DOM**: Why is there DOM manipulation? Shouldn't everything just be React components?
+4. **Humble objects**: Make sure external system interactions are all behind humble objects
+
 ## Retros
 
 Run retros weekly (or when user says "retro") to review human-AI collaboration patterns. Also triggered at end of session when user says "workflow review".
