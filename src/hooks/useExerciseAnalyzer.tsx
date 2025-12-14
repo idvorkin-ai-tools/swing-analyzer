@@ -45,6 +45,7 @@ import {
   findNextCheckpoint,
   findPreviousCheckpoint,
 } from '../utils/checkpointUtils';
+import { calculateDepthFromKeypoints } from '../utils/depthCalculation';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
@@ -569,20 +570,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       const workingHip = Math.min(leftHip, rightHip);
 
       // Depth percentage using ear Y position (more accurate than knee angle)
-      // Ear Y is in normalized coords: 0 = top, 1 = bottom of frame
-      // Standing: earY ~0.15-0.25, Deep squat: earY ~0.5-0.7
-      const keypoints = skeleton.getKeypoints();
-      const leftEar = keypoints[7]; // LEFT_EAR
-      const rightEar = keypoints[8]; // RIGHT_EAR
-      const nose = keypoints[0]; // NOSE fallback
-      const earY =
-        leftEar && rightEar
-          ? (leftEar.y + rightEar.y) / 2
-          : (leftEar?.y ?? rightEar?.y ?? nose?.y ?? 0.2);
-
-      // Convert ear Y to depth percentage: ~0.15 = 0%, ~0.65 = 100%
-      const depthRaw = ((earY - 0.15) / 0.5) * 100;
-      const depth = Math.max(0, Math.min(100, Math.round(depthRaw)));
+      const depth = calculateDepthFromKeypoints(skeleton.getKeypoints());
 
       const angles: Record<string, number> = {
         // Kettlebell swing metrics
