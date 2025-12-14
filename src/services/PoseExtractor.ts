@@ -21,6 +21,7 @@ import type {
   PoseTrackFrame,
   PrecomputedAngles,
 } from '../types/posetrack';
+import { asVideoHeight, asVideoWidth } from '../utils/brandedTypes';
 import {
   calculateStableCropRegion,
   isLandscapeVideo,
@@ -370,15 +371,20 @@ export async function extractPosesFromVideo(
 
     // Calculate crop region for landscape videos
     let cropRegion: CropRegion | undefined;
-    if (isLandscapeVideo(videoWidth, videoHeight)) {
+    if (
+      isLandscapeVideo(asVideoWidth(videoWidth), asVideoHeight(videoHeight))
+    ) {
       // Use first 5 seconds of frames for crop detection
       const detectionDuration = Math.min(5, duration);
       const detectionFrameCount = Math.ceil(detectionDuration * fps);
       const detectionFrames = frames.slice(0, detectionFrameCount);
 
       cropRegion =
-        calculateStableCropRegion(detectionFrames, videoWidth, videoHeight) ??
-        undefined;
+        calculateStableCropRegion(
+          detectionFrames,
+          asVideoWidth(videoWidth),
+          asVideoHeight(videoHeight)
+        ) ?? undefined;
 
       if (cropRegion) {
         console.log(

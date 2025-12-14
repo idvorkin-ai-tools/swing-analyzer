@@ -6,11 +6,27 @@ import { describe, expect, it } from 'vitest';
 import type { PoseKeypoint } from '../types';
 import type { PoseTrackFrame } from '../types/posetrack';
 import {
+  asPixelX,
+  asPixelY,
+  asVideoHeight,
+  asVideoWidth,
+} from './brandedTypes';
+import {
   calculateBoundingBox,
   calculateStableCropRegion,
   isLandscapeVideo,
   mergeBoundingBoxes,
 } from './videoCrop';
+
+/** Helper to create bounding box with branded types for tests */
+function bbox(minX: number, minY: number, maxX: number, maxY: number) {
+  return {
+    minX: asPixelX(minX),
+    minY: asPixelY(minY),
+    maxX: asPixelX(maxX),
+    maxY: asPixelY(maxY),
+  };
+}
 
 describe('calculateBoundingBox', () => {
   it('returns null for empty keypoints array', () => {
@@ -60,34 +76,42 @@ describe('mergeBoundingBoxes', () => {
   });
 
   it('returns the same box for single element', () => {
-    const box = { minX: 10, minY: 20, maxX: 100, maxY: 200 };
+    const box = bbox(10, 20, 100, 200);
     expect(mergeBoundingBoxes([box])).toEqual(box);
   });
 
   it('calculates union of multiple boxes', () => {
     const boxes = [
-      { minX: 100, minY: 100, maxX: 200, maxY: 200 },
-      { minX: 50, minY: 150, maxX: 150, maxY: 250 },
-      { minX: 180, minY: 80, maxX: 220, maxY: 180 },
+      bbox(100, 100, 200, 200),
+      bbox(50, 150, 150, 250),
+      bbox(180, 80, 220, 180),
     ];
     const merged = mergeBoundingBoxes(boxes);
-    expect(merged).toEqual({ minX: 50, minY: 80, maxX: 220, maxY: 250 });
+    expect(merged).toEqual(bbox(50, 80, 220, 250));
   });
 });
 
 describe('isLandscapeVideo', () => {
   it('returns true when width > height', () => {
-    expect(isLandscapeVideo(1920, 1080)).toBe(true);
-    expect(isLandscapeVideo(1280, 720)).toBe(true);
+    expect(isLandscapeVideo(asVideoWidth(1920), asVideoHeight(1080))).toBe(
+      true
+    );
+    expect(isLandscapeVideo(asVideoWidth(1280), asVideoHeight(720))).toBe(true);
   });
 
   it('returns false when height > width (portrait)', () => {
-    expect(isLandscapeVideo(1080, 1920)).toBe(false);
-    expect(isLandscapeVideo(720, 1280)).toBe(false);
+    expect(isLandscapeVideo(asVideoWidth(1080), asVideoHeight(1920))).toBe(
+      false
+    );
+    expect(isLandscapeVideo(asVideoWidth(720), asVideoHeight(1280))).toBe(
+      false
+    );
   });
 
   it('returns false when width equals height (square)', () => {
-    expect(isLandscapeVideo(1080, 1080)).toBe(false);
+    expect(isLandscapeVideo(asVideoWidth(1080), asVideoHeight(1080))).toBe(
+      false
+    );
   });
 });
 
@@ -100,12 +124,16 @@ describe('calculateStableCropRegion', () => {
   });
 
   it('returns null for empty frames array', () => {
-    expect(calculateStableCropRegion([], 1920, 1080)).toBeNull();
+    expect(
+      calculateStableCropRegion([], asVideoWidth(1920), asVideoHeight(1080))
+    ).toBeNull();
   });
 
   it('returns null when no keypoints detected in any frame', () => {
     const frames = [createFrame([]), createFrame([])];
-    expect(calculateStableCropRegion(frames, 1920, 1080)).toBeNull();
+    expect(
+      calculateStableCropRegion(frames, asVideoWidth(1920), asVideoHeight(1080))
+    ).toBeNull();
   });
 
   it('returns null when all keypoints are low confidence', () => {
@@ -113,7 +141,9 @@ describe('calculateStableCropRegion', () => {
       { x: 100, y: 100, score: 0.1, name: 'nose' },
     ];
     const frames = [createFrame(lowConfidence)];
-    expect(calculateStableCropRegion(frames, 1920, 1080)).toBeNull();
+    expect(
+      calculateStableCropRegion(frames, asVideoWidth(1920), asVideoHeight(1080))
+    ).toBeNull();
   });
 
   it('calculates portrait crop region centered on person', () => {
@@ -123,7 +153,11 @@ describe('calculateStableCropRegion', () => {
       { x: 1060, y: 740, score: 0.9, name: 'leftAnkle' },
     ];
     const frames = [createFrame(keypoints)];
-    const crop = calculateStableCropRegion(frames, 1920, 1080);
+    const crop = calculateStableCropRegion(
+      frames,
+      asVideoWidth(1920),
+      asVideoHeight(1080)
+    );
 
     expect(crop).not.toBeNull();
     // Should be portrait aspect ratio (3:4), so width < height
@@ -145,7 +179,11 @@ describe('calculateStableCropRegion', () => {
       { x: 150, y: 300, score: 0.9, name: 'leftAnkle' },
     ];
     const frames = [createFrame(keypoints)];
-    const crop = calculateStableCropRegion(frames, 1920, 1080);
+    const crop = calculateStableCropRegion(
+      frames,
+      asVideoWidth(1920),
+      asVideoHeight(1080)
+    );
 
     expect(crop).not.toBeNull();
     expect(crop?.x).toBeGreaterThanOrEqual(0);
@@ -163,7 +201,11 @@ describe('calculateStableCropRegion', () => {
       { x: 700, y: 600, score: 0.9, name: 'leftAnkle' },
     ];
     const frames = [createFrame(frame1Keypoints), createFrame(frame2Keypoints)];
-    const crop = calculateStableCropRegion(frames, 1920, 1080);
+    const crop = calculateStableCropRegion(
+      frames,
+      asVideoWidth(1920),
+      asVideoHeight(1080)
+    );
 
     expect(crop).not.toBeNull();
     // Crop should be large enough to cover both positions
@@ -178,7 +220,13 @@ describe('calculateStableCropRegion', () => {
     ];
     const frames = [createFrame(keypoints)];
     // Use 1.5x width padding, 1.4x height padding
-    const crop = calculateStableCropRegion(frames, 1920, 1080, 1.5, 1.4);
+    const crop = calculateStableCropRegion(
+      frames,
+      asVideoWidth(1920),
+      asVideoHeight(1080),
+      1.5,
+      1.4
+    );
 
     expect(crop).not.toBeNull();
     // Raw bounding box: 20px wide x 50px tall
@@ -195,7 +243,11 @@ describe('calculateStableCropRegion', () => {
       { x: 960, y: 1030, score: 0.9, name: 'leftAnkle' },
     ];
     const frames = [createFrame(keypoints)];
-    const crop = calculateStableCropRegion(frames, 1920, 1080);
+    const crop = calculateStableCropRegion(
+      frames,
+      asVideoWidth(1920),
+      asVideoHeight(1080)
+    );
 
     expect(crop).not.toBeNull();
     // Crop height should be capped at 85% of video height (918px)
