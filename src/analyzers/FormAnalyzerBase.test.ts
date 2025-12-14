@@ -148,6 +148,15 @@ class TestFormAnalyzer extends FormAnalyzerBase<
     return ['start', 'middle', 'end'];
   }
 
+  getHudConfig() {
+    return {
+      metrics: [
+        { key: 'angle1', label: 'ANG1', unit: '°', decimals: 0 },
+        { key: 'angle2', label: 'ANG2', unit: '°', decimals: 0 },
+      ],
+    };
+  }
+
   protected calculateRepQuality(): RepQuality {
     const score = Math.min(
       100,

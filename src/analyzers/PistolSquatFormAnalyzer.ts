@@ -704,6 +704,16 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     return ['standing', 'descending', 'bottom', 'ascending'];
   }
 
+  getHudConfig() {
+    return {
+      metrics: [
+        { key: 'kneeAngle', label: 'KNEE', unit: '°', decimals: 0 },
+        { key: 'hipAngle', label: 'HIP', unit: '°', decimals: 0 },
+        { key: 'depth', label: 'DEPTH', unit: '%', decimals: 0 },
+      ],
+    };
+  }
+
   /**
    * Get the detected working leg (the leg doing the squat).
    * Returns null if not yet detected (needs a few frames of movement).

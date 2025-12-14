@@ -98,6 +98,9 @@ export abstract class FormAnalyzerBase<
   /** Get all valid phases for this exercise in display order */
   abstract getPhases(): string[];
 
+  /** Get HUD configuration for this exercise */
+  abstract getHudConfig(): import('./FormAnalyzer').HudConfig;
+
   /**
    * Calculate quality score for the completed rep.
    * Called when a rep completes, uses metrics tracked during the rep.
