@@ -665,6 +665,14 @@ main {
   font-size: 0.875rem;
 }
 
+/* Unit label (e.g., m/s) */
+.hud-overlay-unit {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--hud-text-secondary, rgba(255, 255, 255, 0.6));
+  margin-left: 2px;
+}
+
 .hud-overlay-top-right {
   position: absolute;
   top: 12px;
