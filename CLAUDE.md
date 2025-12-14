@@ -203,11 +203,13 @@ just test-unit        # Run unit tests
 
 ### Bug Investigation Protocol
 
-**Before fixing ANY bug, answer these questions:**
+See [chop-conventions/dev-inner-loop/bug-investigation.md](https://github.com/idvorkin/chop-conventions/blob/main/dev-inner-loop/bug-investigation.md).
 
-1. **Spec**: Is this actually a bug, or is my understanding wrong? Ask user if ambiguous.
-2. **Tests**: Why didn't tests catch this? Add the missing test BEFORE fixing.
-3. **Architecture**: Is there a deeper problem? Create beads issue if yes.
+**Quick version:** Before fixing ANY bug:
+
+1. **Spec**: Is this actually a bug? Ask if unclear.
+2. **Test**: Add missing test BEFORE fixing.
+3. **Arch**: Deeper problem? Create beads issue.
 
 ### E2E Test Files
 
@@ -430,25 +432,22 @@ gh api repos/idvorkin/swing-analyzer/pulls/PR_NUMBER/comments \
 
 ### Retros
 
-Run weekly (or when user says "retro") to review patterns.
+Run weekly (or when user says "retro"). See [chop-conventions/dev-inner-loop/retros.md](https://github.com/idvorkin/chop-conventions/blob/main/dev-inner-loop/retros.md).
 
 **Storage:** `.claude/retros/`
-**Data sources:** Claude logs, git history, beads
-
-```bash
-# Friction patterns
-cat ~/.claude/history.jsonl | jq -r 'select(.timestamp >= EPOCH_MS) | .display' | grep -iE "^no[,. ]|wrong|try again|broken|stuck"
-```
 
 ---
 
-## Before Implementing (Checklist)
+## Before Implementing
 
-1. **Spec first** - Think before coding
-2. **Confirm understanding** - Ask if unsure what was requested
-3. **Read existing code** - Understand what's already implemented
-4. **Update architecture docs** - If needed
-5. **Plan in beads** - So work can continue if context clears
+See [chop-conventions/dev-inner-loop/before-implementing.md](https://github.com/idvorkin/chop-conventions/blob/main/dev-inner-loop/before-implementing.md).
+
+**Quick version:**
+
+1. **Spec first** - Understand what success looks like
+2. **Confirm understanding** - Ask if unsure
+3. **Read existing code** - Understand context
+4. **Plan in beads** - So work continues if context clears
 
 ---
 
