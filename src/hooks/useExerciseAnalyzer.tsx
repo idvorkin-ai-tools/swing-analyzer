@@ -559,23 +559,40 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
       // Update generic angles map for dynamic HUD rendering
       // Include all angles that any exercise might need
+      const leftKnee = skeleton.getKneeAngleForSide('left') || 180;
+      const rightKnee = skeleton.getKneeAngleForSide('right') || 180;
+      // Use the more bent knee (lower angle = deeper squat)
+      const workingKnee = Math.min(leftKnee, rightKnee);
+      const leftHip = skeleton.getHipAngleForSide('left') || 180;
+      const rightHip = skeleton.getHipAngleForSide('right') || 180;
+      // Use the more bent hip
+      const workingHip = Math.min(leftHip, rightHip);
+
+      // Depth percentage using ear Y position (more accurate than knee angle)
+      // Ear Y is in normalized coords: 0 = top, 1 = bottom of frame
+      // Standing: earY ~0.15-0.25, Deep squat: earY ~0.5-0.7
+      const keypoints = skeleton.getKeypoints();
+      const leftEar = keypoints[7]; // LEFT_EAR
+      const rightEar = keypoints[8]; // RIGHT_EAR
+      const nose = keypoints[0]; // NOSE fallback
+      const earY =
+        leftEar && rightEar
+          ? (leftEar.y + rightEar.y) / 2
+          : (leftEar?.y ?? rightEar?.y ?? nose?.y ?? 0.2);
+
+      // Convert ear Y to depth percentage: ~0.15 = 0%, ~0.65 = 100%
+      const depthRaw = ((earY - 0.15) / 0.5) * 100;
+      const depth = Math.max(0, Math.min(100, Math.round(depthRaw)));
+
       const angles: Record<string, number> = {
         // Kettlebell swing metrics
         spineAngle: spine,
         armAngle: arm,
         speed,
-        // Pistol squat metrics - use average of both legs or prefer visible side
-        kneeAngle: Math.round(
-          skeleton.getKneeAngleForSide('left') ||
-            skeleton.getKneeAngleForSide('right') ||
-            0
-        ),
-        hipAngle: Math.round(
-          skeleton.getHipAngleForSide('left') ||
-            skeleton.getHipAngleForSide('right') ||
-            0
-        ),
-        depth: 0, // TODO: Calculate depth percentage for pistol squat
+        // Pistol squat metrics - use working leg (more bent)
+        kneeAngle: Math.round(workingKnee),
+        hipAngle: Math.round(workingHip),
+        depth,
       };
       setCurrentAngles(angles);
 
