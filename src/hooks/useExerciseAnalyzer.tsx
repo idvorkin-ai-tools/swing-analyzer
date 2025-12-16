@@ -18,7 +18,6 @@ import {
   getSampleVideos,
   type SampleVideo,
 } from '../analyzers/ExerciseRegistry';
-import { PHASE_ORDER } from '../components/repGalleryConstants';
 import type { Skeleton } from '../models/Skeleton';
 import { InputSession, type InputSessionState } from '../pipeline/InputSession';
 import type { Pipeline, ThumbnailEvent } from '../pipeline/Pipeline';
@@ -50,6 +49,7 @@ import {
 } from '../utils/brandedTypes';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
+import { useExerciseDetection } from './useExerciseDetection';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
 import { useRepNavigation } from './useRepNavigation';
 import { calculateCanvasPlacement } from './utils/canvasSyncUtils';
@@ -63,9 +63,6 @@ import {
 
 // Throttle interval for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
 const REP_SYNC_INTERVAL_MS = 1000; // 1 second
-
-// Default phases (swing) - used when resetting before exercise detection runs
-const DEFAULT_PHASES = [...PHASE_ORDER];
 
 export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // ========================================
@@ -112,14 +109,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const [hasPosesForCurrentFrame, setHasPosesForCurrentFrame] =
     useState<boolean>(false);
   const [currentPosition, setCurrentPosition] = useState<string | null>(null);
-
-  // Exercise detection state
-  const [detectedExercise, setDetectedExercise] =
-    useState<DetectedExercise>('unknown');
-  const [detectionConfidence, setDetectionConfidence] = useState<number>(0);
-  const [isDetectionLocked, setIsDetectionLocked] = useState<boolean>(false);
-  const [currentPhases, setCurrentPhases] = useState<string[]>(DEFAULT_PHASES);
-  const [workingLeg, setWorkingLeg] = useState<'left' | 'right' | null>(null);
 
   // Track if we've recorded extraction start for current session (to avoid spam)
   const hasRecordedExtractionStartRef = useRef<boolean>(false);
@@ -168,6 +157,31 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     },
     [repCount]
   );
+
+  // ========================================
+  // Exercise Detection (extracted hook)
+  // ========================================
+  const {
+    detectedExercise,
+    detectionConfidence,
+    isDetectionLocked,
+    currentPhases,
+    workingLeg,
+    handleDetectionEvent,
+    setExerciseType,
+    resetDetectionState,
+    handleLegacyDetectionLock,
+  } = useExerciseDetection({
+    getPhasesFromPipeline: useCallback(
+      () => pipelineRef.current?.getFormAnalyzer()?.getPhases() ?? null,
+      []
+    ),
+    setPipelineExerciseType: useCallback(
+      (exercise: DetectedExercise) =>
+        pipelineRef.current?.setExerciseType(exercise),
+      []
+    ),
+  });
 
   // ========================================
   // Rep Navigation (extracted hook)
@@ -755,26 +769,30 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       .getExerciseDetectionEvents()
       .subscribe({
         next: (detection) => {
-          // Batch related state updates to prevent multiple re-renders
+          // Get working leg from form analyzer
           const formAnalyzer = pipeline.getFormAnalyzer();
-          const newPhases = formAnalyzer.getPhases();
-          const newWorkingLeg = formAnalyzer.getWorkingLeg?.() ?? null;
-          const newIsLocked = pipeline.isExerciseDetectionLocked();
+          const workingLegFromPipeline = formAnalyzer.getWorkingLeg?.() ?? null;
 
-          // Update all detection-related state together
-          setDetectedExercise(detection.exercise);
-          setDetectionConfidence(detection.confidence);
-          setIsDetectionLocked(newIsLocked);
-          setCurrentPhases(newPhases);
-          setWorkingLeg(newWorkingLeg);
+          // Use extracted hook to handle detection (manages lock state, phases, etc.)
+          handleDetectionEvent(
+            {
+              exercise: detection.exercise,
+              confidence: detection.confidence,
+              workingLeg: workingLegFromPipeline,
+            },
+            isDetectionLocked
+          );
         },
         error: (error) => {
           console.error('Error in exercise detection subscription:', error);
           // Provide user feedback and set a sensible default
           setStatus('Detection error - defaulting to kettlebell swing');
-          setDetectedExercise('kettlebell-swing');
-          setIsDetectionLocked(true);
-          setCurrentPhases(['top', 'connect', 'bottom', 'release']);
+          handleLegacyDetectionLock('kettlebell-swing', [
+            'top',
+            'connect',
+            'bottom',
+            'release',
+          ]);
         },
       });
 
@@ -819,7 +837,14 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       thumbnailQueueRef.current?.dispose();
       thumbnailQueueRef.current = null;
     };
-  }, [initializePipeline, processSkeletonEvent, updateHudFromSkeleton]);
+  }, [
+    initializePipeline,
+    processSkeletonEvent,
+    updateHudFromSkeleton,
+    handleDetectionEvent,
+    handleLegacyDetectionLock,
+    isDetectionLocked,
+  ]);
 
   // ========================================
   // Video Playback Handlers
@@ -981,12 +1006,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     setRepThumbnails(new Map());
     pipelineRef.current?.reset();
     hasRecordedExtractionStartRef.current = false;
-    setDetectedExercise('unknown');
-    setDetectionConfidence(0);
-    setIsDetectionLocked(false);
-    setCurrentPhases(DEFAULT_PHASES);
-    setWorkingLeg(null);
-  }, []);
+    resetDetectionState();
+  }, [resetDetectionState]);
 
   // Helper: Clear loading UI state (used on abort or completion)
   const clearLoadingState = useCallback(() => {
@@ -1337,12 +1358,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     setSpineAngle(0);
     setArmToSpineAngle(0);
     setRepThumbnails(new Map());
-    // Reset exercise detection state
-    setDetectedExercise('unknown');
-    setDetectionConfidence(0);
-    setIsDetectionLocked(false);
-    setCurrentPhases(DEFAULT_PHASES);
-    setWorkingLeg(null);
+    // Reset exercise detection state (via extracted hook)
+    resetDetectionState();
     setAppState((prev) => ({
       ...prev,
       currentRepIndex: 0,
@@ -1353,21 +1370,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         lastConnectState: false,
       },
     }));
-  }, []);
-
-  // ========================================
-  // Exercise Type Override
-  // ========================================
-  const setExerciseType = useCallback((exercise: DetectedExercise) => {
-    pipelineRef.current?.setExerciseType(exercise);
-    setDetectedExercise(exercise);
-    setIsDetectionLocked(true);
-    // Update phases when exercise type is manually changed
-    const formAnalyzer = pipelineRef.current?.getFormAnalyzer();
-    if (formAnalyzer) {
-      setCurrentPhases(formAnalyzer.getPhases());
-    }
-  }, []);
+  }, [resetDetectionState]);
 
   // ========================================
   // Helper Functions
