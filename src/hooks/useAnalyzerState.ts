@@ -168,6 +168,11 @@ export type AnalyzerAction =
       position: string;
       candidate: PositionCandidate;
     }
+  | {
+      type: 'SET_REP_THUMBNAILS';
+      repNum: number;
+      positions: Map<string, PositionCandidate>;
+    }
   | { type: 'CLEAR_THUMBNAILS' }
   | { type: 'SET_HAS_POSES'; hasPoses: boolean }
   // HUD
@@ -319,6 +324,15 @@ export function analyzerReducer(
       const repMap = newThumbnails.get(action.repNum) ?? new Map();
       repMap.set(action.position, action.candidate);
       newThumbnails.set(action.repNum, repMap);
+      return {
+        ...state,
+        analysis: { ...state.analysis, repThumbnails: newThumbnails },
+      };
+    }
+
+    case 'SET_REP_THUMBNAILS': {
+      const newThumbnails = new Map(state.analysis.repThumbnails);
+      newThumbnails.set(action.repNum, action.positions);
       return {
         ...state,
         analysis: { ...state.analysis, repThumbnails: newThumbnails },
@@ -511,6 +525,10 @@ export interface UseAnalyzerStateReturn {
       position: string,
       candidate: PositionCandidate
     ) => void;
+    setRepThumbnails: (
+      repNum: number,
+      positions: Map<string, PositionCandidate>
+    ) => void;
     clearThumbnails: () => void;
     setHasPoses: (hasPoses: boolean) => void;
     updateHud: (
@@ -574,6 +592,10 @@ export function useAnalyzerState(
         position: string,
         candidate: PositionCandidate
       ) => dispatch({ type: 'ADD_THUMBNAIL', repNum, position, candidate }),
+      setRepThumbnails: (
+        repNum: number,
+        positions: Map<string, PositionCandidate>
+      ) => dispatch({ type: 'SET_REP_THUMBNAILS', repNum, positions }),
       clearThumbnails: () => dispatch({ type: 'CLEAR_THUMBNAILS' }),
       setHasPoses: (hasPoses: boolean) =>
         dispatch({ type: 'SET_HAS_POSES', hasPoses }),

@@ -40,15 +40,19 @@ import type { AppState } from '../types';
 import type { PositionCandidate } from '../types/exercise';
 import type { CropRegion } from '../types/posetrack';
 import {
-  asMetersPerSecond,
   asVideoHeight,
   asVideoWidth,
   DEFAULT_VIDEO_HEIGHT,
-  type MetersPerSecond,
   type VideoHeight,
 } from '../utils/brandedTypes';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
+import {
+  getVideoFile,
+  isVideoLoading as isVideoLoadingSelector,
+  isVideoPlaying as isVideoPlayingSelector,
+  useAnalyzerState,
+} from './useAnalyzerState';
 import { useExerciseDetection } from './useExerciseDetection';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
 import { useRepNavigation } from './useRepNavigation';
@@ -66,8 +70,11 @@ const REP_SYNC_INTERVAL_MS = 1000; // 1 second
 
 export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // ========================================
-  // Core State
+  // Centralized State (Reducer)
   // ========================================
+  const { state: analyzerState, actions } = useAnalyzerState();
+
+  // Legacy appState for backwards compatibility (will be removed in future)
   const [appState, setAppState] = useState<AppState>({
     displayMode: 'both',
     isModelLoaded: false,
@@ -84,21 +91,50 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     ...initialState,
   });
 
-  // UI state
-  const [status, setStatus] = useState<string>('Loading...');
-  const [repCount, setRepCount] = useState<number>(0);
-  const [spineAngle, setSpineAngle] = useState<number>(0);
-  const [armToSpineAngle, setArmToSpineAngle] = useState<number>(0);
-  const [wristVelocity, setWristVelocity] = useState<MetersPerSecond>(
-    asMetersPerSecond(0)
-  );
-  // Generic angles map for dynamic HUD rendering (exercise-specific)
-  const [currentAngles, setCurrentAngles] = useState<Record<string, number>>(
-    {}
-  );
-  const [repThumbnails, setRepThumbnails] = useState<
-    Map<number, Map<string, PositionCandidate>>
-  >(new Map());
+  // ========================================
+  // State from Reducer (single source of truth)
+  // ========================================
+  // Video loading state
+  const isVideoLoading = isVideoLoadingSelector(analyzerState);
+  const videoLoadProgress =
+    analyzerState.video.type === 'loading'
+      ? analyzerState.video.progress
+      : analyzerState.video.type === 'extracting'
+        ? analyzerState.video.progress.percentage
+        : undefined;
+  const videoLoadMessage =
+    analyzerState.video.type === 'loading'
+      ? analyzerState.video.message
+      : analyzerState.video.type === 'extracting'
+        ? 'Extracting poses...'
+        : '';
+  const currentVideoFile = getVideoFile(analyzerState);
+
+  // View state
+  const status = analyzerState.view.status;
+  const cropRegion = analyzerState.view.cropRegion;
+  const isCropEnabled = analyzerState.view.isCropEnabled;
+  const isLandscape = analyzerState.view.isLandscape;
+
+  // HUD state
+  const spineAngle = analyzerState.hud.spineAngle;
+  const armToSpineAngle = analyzerState.hud.armAngle;
+  const wristVelocity = analyzerState.hud.wristVelocity;
+  const currentAngles = analyzerState.hud.currentAngles;
+  const currentPosition = analyzerState.hud.currentPosition;
+
+  // Analysis state
+  const repCount = analyzerState.analysis.repCount;
+  const repThumbnails = analyzerState.analysis.repThumbnails;
+  const hasPosesForCurrentFrame =
+    analyzerState.analysis.hasPosesForCurrentFrame;
+
+  // Is playing derived from video state
+  const isPlaying = isVideoPlayingSelector(analyzerState);
+
+  // ========================================
+  // Remaining useState (to be migrated)
+  // ========================================
   // Ref to track repThumbnails for non-render access (e.g., crop calculation)
   const repThumbnailsRef = useRef(repThumbnails);
   const [extractionProgress, setExtractionProgress] =
@@ -106,9 +142,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const [inputState, setInputState] = useState<InputSessionState>({
     type: 'idle',
   });
-  const [hasPosesForCurrentFrame, setHasPosesForCurrentFrame] =
-    useState<boolean>(false);
-  const [currentPosition, setCurrentPosition] = useState<string | null>(null);
 
   // Track if we've recorded extraction start for current session (to avoid spam)
   const hasRecordedExtractionStartRef = useRef<boolean>(false);
@@ -125,18 +158,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const pipelineRef = useRef<Pipeline | null>(null);
   const skeletonRendererRef = useRef<SkeletonRenderer | null>(null);
   const isPlayingRef = useRef<boolean>(false);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentVideoFile, setCurrentVideoFile] = useState<File | null>(null);
 
   // Track current video's object URL for cleanup on video switch
   const currentVideoUrlRef = useRef<string | null>(null);
 
-  // Media dialog loading state
-  const [isVideoLoading, setIsVideoLoading] = useState<boolean>(false);
-  const [videoLoadProgress, setVideoLoadProgress] = useState<
-    number | undefined
-  >(undefined);
-  const [videoLoadMessage, setVideoLoadMessage] = useState<string>('');
   // Track if we're in the middle of loading a video (to abort on switch)
   const videoLoadAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -200,13 +225,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     currentPosition,
     currentPhases,
     setCurrentRepIndex: setCurrentRepIndexCallback,
-    setCurrentPosition,
+    setCurrentPosition: actions.setPosition,
   });
-
-  // Crop state for auto-centering on person in landscape videos
-  const [cropRegion, setCropRegionState] = useState<CropRegion | null>(null);
-  const [isCropEnabled, setIsCropEnabled] = useState<boolean>(false); // Default to off - user must enable
-  const [isLandscape, setIsLandscape] = useState<boolean>(false); // Video aspect ratio > 1.2
 
   // ========================================
   // Canvas Sync (for skeleton alignment)
@@ -220,7 +240,9 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       if (!video || !canvas || video.videoWidth === 0) return;
 
       // Update landscape state using extracted utility
-      setIsLandscape(isLandscapeVideo(video.videoWidth, video.videoHeight));
+      actions.setLandscape(
+        isLandscapeVideo(video.videoWidth, video.videoHeight)
+      );
 
       // Set canvas internal dimensions to match video
       canvas.width = video.videoWidth;
@@ -266,7 +288,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         `[Canvas] ${isZoomed ? 'Zoomed' : 'Normal'}: ${placement.width.toFixed(0)}x${placement.height.toFixed(0)} at (${placement.left.toFixed(0)},${placement.top.toFixed(0)})`
       );
     },
-    []
+    [actions]
   );
 
   // Keep repThumbnails ref in sync with state for non-render access
@@ -407,22 +429,18 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       repNumber: number,
       positions: RepPosition[]
     ) => {
-      setRepThumbnails((prev) => {
-        const updated = new Map(prev);
-        const positionMap = new Map<string, PositionCandidate>();
-        for (const pos of positions) {
-          positionMap.set(pos.name, {
-            position: pos.name,
-            timestamp: pos.timestamp,
-            videoTime: pos.videoTime,
-            angles: pos.angles,
-            score: pos.score,
-            frameImage: pos.frameImage,
-          });
-        }
-        updated.set(repNumber, positionMap);
-        return updated;
-      });
+      const positionMap = new Map<string, PositionCandidate>();
+      for (const pos of positions) {
+        positionMap.set(pos.name, {
+          position: pos.name,
+          timestamp: pos.timestamp,
+          videoTime: pos.videoTime,
+          angles: pos.angles,
+          score: pos.score,
+          frameImage: pos.frameImage,
+        });
+      }
+      actions.setRepThumbnails(repNumber, positionMap);
     };
 
     // Subscribe to thumbnail events
@@ -450,7 +468,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     });
 
     return pipeline;
-  }, []);
+  }, [actions]);
 
   // Initialize skeleton renderer
   useEffect(() => {
@@ -479,24 +497,19 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       // Use extracted pure function for angle calculations
       const angles = extractHudAngles(skeleton, videoHeight, precomputedSpeed);
 
-      // Update legacy individual state (for backwards compatibility)
-      setSpineAngle(angles.spineAngle);
-      setArmToSpineAngle(angles.armAngle);
-      if (precomputedSpeed !== undefined) {
-        setWristVelocity(asMetersPerSecond(precomputedSpeed));
-      }
+      // Update HUD state via reducer
+      actions.updateHud(angles.spineAngle, angles.armAngle, precomputedSpeed);
 
       // Update generic angles map for dynamic HUD rendering
-      // Convert HudAngles to Record<string, number> for state
-      setCurrentAngles({ ...angles });
+      actions.updateAngles({ ...angles });
 
       // Estimate position from spine angle using extracted pure function
       const position = estimateSwingPosition(angles.spineAngle);
       if (position) {
-        setStatus(position);
+        actions.setStatus(position);
       }
     },
-    []
+    [actions]
   );
 
   // ========================================
@@ -516,74 +529,82 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const MAX_CONSECUTIVE_ERRORS = 5;
 
   // Process a skeleton event through the pipeline and update UI
-  const processSkeletonEvent = useCallback((event: SkeletonEvent) => {
-    if (!event.skeleton) {
-      return;
-    }
-
-    const pipeline = pipelineRef.current;
-    if (!pipeline) {
-      return;
-    }
-
-    // Process through pipeline (updates rep count, form state, etc.)
-    let result: number;
-    try {
-      result = pipeline.processSkeletonEvent(event);
-      // Reset error count on success
-      consecutiveErrorsRef.current = 0;
-    } catch (error) {
-      console.error('[processSkeletonEvent] Pipeline processing error:', error);
-      consecutiveErrorsRef.current++;
-
-      // Surface degraded analysis to user after multiple consecutive errors
-      if (consecutiveErrorsRef.current === MAX_CONSECUTIVE_ERRORS) {
-        setStatus('Analysis experiencing errors - some frames may be skipped');
+  const processSkeletonEvent = useCallback(
+    (event: SkeletonEvent) => {
+      if (!event.skeleton) {
+        return;
       }
-      return; // Don't crash component, just skip this frame
-    }
 
-    // Increment frame counter
-    frameIndexRef.current++;
-    const frameIndex = frameIndexRef.current;
+      const pipeline = pipelineRef.current;
+      if (!pipeline) {
+        return;
+      }
 
-    // Record rep detection event when rep count increases
-    if (result > prevRepCountRef.current) {
-      const skeleton = event.skeleton;
-      const formAnalyzer = pipeline.getFormAnalyzer();
-      // Algorithm always uses right arm - for left-handed users, mirror input data
-      recordRepDetected(result, {
-        frameIndex,
-        videoTime: event.poseEvent.frameEvent.videoTime,
-        angles: {
-          spine: skeleton.getSpineAngle(),
-          arm: skeleton.getArmToSpineAngle(),
-          armToVertical: skeleton.getArmToVerticalAngle('right'),
-          hip: skeleton.getHipAngle(),
-        },
-        phase: formAnalyzer.getPhase(),
-      });
-      prevRepCountRef.current = result;
-    }
+      // Process through pipeline (updates rep count, form state, etc.)
+      let result: number;
+      try {
+        result = pipeline.processSkeletonEvent(event);
+        // Reset error count on success
+        consecutiveErrorsRef.current = 0;
+      } catch (error) {
+        console.error(
+          '[processSkeletonEvent] Pipeline processing error:',
+          error
+        );
+        consecutiveErrorsRef.current++;
 
-    // Debug: log every 100 frames and on rep changes
-    if (
-      event.poseEvent.frameEvent.videoTime !== undefined &&
-      Math.floor(event.poseEvent.frameEvent.videoTime * 30) % 100 === 0
-    ) {
-      console.log(
-        `[processSkeletonEvent] videoTime=${event.poseEvent.frameEvent.videoTime?.toFixed(2)}, repCount=${result}`
-      );
-    }
+        // Surface degraded analysis to user after multiple consecutive errors
+        if (consecutiveErrorsRef.current === MAX_CONSECUTIVE_ERRORS) {
+          actions.setStatus(
+            'Analysis experiencing errors - some frames may be skipped'
+          );
+        }
+        return; // Don't crash component, just skip this frame
+      }
 
-    // Update rep count (cumulative across all extracted frames)
-    setRepCount(result);
+      // Increment frame counter
+      frameIndexRef.current++;
+      const frameIndex = frameIndexRef.current;
 
-    // NOTE: Do NOT update spineAngle/armToSpineAngle here!
-    // This is called for every extraction frame, but the visible video isn't synced
-    // to extraction. HUD angles should only reflect video.currentTime, updated via
-    // updateHudFromSkeleton() during playback/seek.
-  }, []);
+      // Record rep detection event when rep count increases
+      if (result > prevRepCountRef.current) {
+        const skeleton = event.skeleton;
+        const formAnalyzer = pipeline.getFormAnalyzer();
+        // Algorithm always uses right arm - for left-handed users, mirror input data
+        recordRepDetected(result, {
+          frameIndex,
+          videoTime: event.poseEvent.frameEvent.videoTime,
+          angles: {
+            spine: skeleton.getSpineAngle(),
+            arm: skeleton.getArmToSpineAngle(),
+            armToVertical: skeleton.getArmToVerticalAngle('right'),
+            hip: skeleton.getHipAngle(),
+          },
+          phase: formAnalyzer.getPhase(),
+        });
+        prevRepCountRef.current = result;
+      }
+
+      // Debug: log every 100 frames and on rep changes
+      if (
+        event.poseEvent.frameEvent.videoTime !== undefined &&
+        Math.floor(event.poseEvent.frameEvent.videoTime * 30) % 100 === 0
+      ) {
+        console.log(
+          `[processSkeletonEvent] videoTime=${event.poseEvent.frameEvent.videoTime?.toFixed(2)}, repCount=${result}`
+        );
+      }
+
+      // Update rep count (cumulative across all extracted frames)
+      actions.setRepCount(result);
+
+      // NOTE: Do NOT update spineAngle/armToSpineAngle here!
+      // This is called for every extraction frame, but the visible video isn't synced
+      // to extraction. HUD angles should only reflect video.currentTime, updated via
+      // updateHudFromSkeleton() during playback/seek.
+    },
+    [actions]
+  );
 
   // ========================================
   // InputSession Setup
@@ -610,7 +631,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       // Update app state based on session state
       if (state.type === 'video-file') {
         if (state.sourceState.type === 'extracting') {
-          setStatus('Extracting poses...');
+          actions.setStatus('Extracting poses...');
           // Cache wasn't found, clear the cache processing state
           setIsCacheProcessing(false);
           // Record extraction start only once per extraction session
@@ -619,7 +640,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             recordExtractionStart({ fileName: state.fileName });
           }
         } else if (state.sourceState.type === 'active') {
-          setStatus('Ready');
+          actions.setStatus('Ready');
           // Record extraction complete (only if we recorded start)
           if (hasRecordedExtractionStartRef.current) {
             recordExtractionComplete({ fileName: state.fileName });
@@ -688,7 +709,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
                 asVideoWidth(videoWidth),
                 asVideoHeight(videoHeight)
               );
-              setCropRegionState(crop);
+              actions.setCropRegion(crop);
               if (crop && pipelineRef.current) {
                 pipelineRef.current.setCropRegion(crop);
               }
@@ -699,7 +720,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
           if (video) {
             const skeletonEvent = session.getSkeletonAtTime(video.currentTime);
             const hasPoses = !!skeletonEvent?.skeleton;
-            setHasPosesForCurrentFrame(hasPoses);
+            actions.setHasPoses(hasPoses);
             if (skeletonEvent?.skeleton) {
               updateHudFromSkeleton(
                 skeletonEvent.skeleton,
@@ -716,19 +737,20 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             }
           }
         } else if (state.sourceState.type === 'checking-cache') {
-          setStatus('Checking cache...');
+          actions.setStatus('Checking cache...');
           // Mark cache processing as in progress (will be cleared when batchComplete arrives)
           setIsCacheProcessing(true);
         }
       } else if (state.type === 'error') {
-        setStatus(`Error: ${state.message}`);
+        actions.setStatus(`Error: ${state.message}`);
         setIsCacheProcessing(false); // Clear loading state on error
       } else {
-        setStatus('Ready');
+        actions.setStatus('Ready');
       }
 
       // Mark model as loaded once we have an active source
       if (state.type === 'video-file' && state.sourceState.type === 'active') {
+        actions.modelLoaded();
         setAppState((prev) => ({ ...prev, isModelLoaded: true }));
       }
     });
@@ -786,7 +808,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         error: (error) => {
           console.error('Error in exercise detection subscription:', error);
           // Provide user feedback and set a sensible default
-          setStatus('Detection error - defaulting to kettlebell swing');
+          actions.setStatus('Detection error - defaulting to kettlebell swing');
           handleLegacyDetectionLock('kettlebell-swing', [
             'top',
             'connect',
@@ -797,8 +819,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       });
 
     // Mark as ready
+    actions.modelLoaded();
     setAppState((prev) => ({ ...prev, isModelLoaded: true }));
-    setStatus('Ready');
 
     // Set up session recorder pipeline state getter for debugging
     const video = videoRef.current;
@@ -844,6 +866,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     handleDetectionEvent,
     handleLegacyDetectionLock,
     isDetectionLocked,
+    actions,
   ]);
 
   // ========================================
@@ -856,21 +879,21 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
     const handlePlay = () => {
       isPlayingRef.current = true;
-      setIsPlaying(true);
+      actions.play();
       setAppState((prev) => ({ ...prev, isProcessing: true }));
       recordPlaybackStart({ videoTime: video.currentTime });
     };
 
     const handlePause = () => {
       isPlayingRef.current = false;
-      setIsPlaying(false);
+      actions.pause();
       setAppState((prev) => ({ ...prev, isProcessing: false }));
       recordPlaybackPause({ videoTime: video.currentTime });
     };
 
     const handleEnded = () => {
       isPlayingRef.current = false;
-      setIsPlaying(false);
+      actions.videoEnded();
       setAppState((prev) => ({ ...prev, isProcessing: false }));
       // Don't reset rep count when video ends - just stop processing
     };
@@ -885,7 +908,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       if (session && isPlayingRef.current) {
         const skeletonEvent = session.getSkeletonAtTime(metadata.mediaTime);
         const hasPoses = !!skeletonEvent?.skeleton;
-        setHasPosesForCurrentFrame(hasPoses);
+        actions.setHasPoses(hasPoses);
         if (skeletonEvent?.skeleton) {
           // Render the skeleton
           if (skeletonRendererRef.current) {
@@ -961,7 +984,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
       const skeletonEvent = session.getSkeletonAtTime(video.currentTime);
       const hasPoses = !!skeletonEvent?.skeleton;
-      setHasPosesForCurrentFrame(hasPoses);
+      actions.setHasPoses(hasPoses);
       if (skeletonEvent?.skeleton) {
         // Render the skeleton
         if (skeletonRendererRef.current) {
@@ -994,7 +1017,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       video.removeEventListener('seeked', handleSeeked);
       stopVideoFrameCallback();
     };
-  }, [updateHudFromSkeleton]); // repSyncHandlerRef is stable (ref), updateHudFromSkeleton is stable (useCallback)
+  }, [updateHudFromSkeleton, actions]); // repSyncHandlerRef is stable (ref), updateHudFromSkeleton is stable (useCallback)
 
   // ========================================
   // Video File Controls
@@ -1002,18 +1025,18 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
   // Helper: Reset all video-related state for a new video
   const resetVideoState = useCallback(() => {
-    setRepCount(0);
-    setRepThumbnails(new Map());
+    actions.setRepCount(0);
+    actions.clearThumbnails();
     pipelineRef.current?.reset();
     hasRecordedExtractionStartRef.current = false;
     resetDetectionState();
-  }, [resetDetectionState]);
+  }, [resetDetectionState, actions]);
 
   // Helper: Clear loading UI state (used on abort or completion)
   const clearLoadingState = useCallback(() => {
-    setIsVideoLoading(false);
-    setVideoLoadProgress(undefined);
-    setVideoLoadMessage('');
+    // Video loading state is derived from reducer, so just dispatch VIDEO_LOADED
+    // with a dummy file to reset, or rely on state transitions
+    // For now, this is a no-op since loading state is derived from video state
   }, []);
 
   // Helper: Prepare for video loading (abort previous, create new controller)
@@ -1036,7 +1059,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       const video = videoRef.current;
       if (!session || !video) {
         console.error(`loadVideo: session or video element not initialized`);
-        setStatus('Error: App not initialized. Please refresh.');
+        actions.setStatus('Error: App not initialized. Please refresh.');
         return false;
       }
 
@@ -1044,7 +1067,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         // Load video into DOM
         await loadVideoSafely(video, blobUrl, abortController.signal);
 
-        setCurrentVideoFile(videoFile);
+        // Video loaded - dispatch to reducer (videoLoaded transitions from loading to ready)
+        actions.videoLoaded(videoFile);
         recordVideoLoad({
           source: context === 'video' ? 'upload' : 'hardcoded',
           fileName: videoFile.name,
@@ -1054,10 +1078,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         thumbnailQueueRef.current?.setVideoSource(videoFile);
 
         // Start extraction/cache lookup - pass signal to allow cancellation
-        setVideoLoadMessage('Processing video...');
+        actions.setLoadingProgress(50, 'Processing video...');
         await session.startVideoFile(videoFile, abortController.signal);
 
-        setStatus('Video loaded. Press Play to start.');
+        actions.setStatus('Video loaded. Press Play to start.');
         clearLoadingState();
         return true;
       } catch (error) {
@@ -1067,12 +1091,12 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
           return false;
         }
         console.error(`Error loading ${context}:`, error);
-        setStatus(`Error: ${getVideoLoadErrorMessage(error, context)}`);
+        actions.error(getVideoLoadErrorMessage(error, context));
         clearLoadingState();
         return false;
       }
     },
-    [loadVideoSafely, clearLoadingState]
+    [loadVideoSafely, clearLoadingState, actions]
   );
 
   // Handle user-uploaded video files
@@ -1085,20 +1109,18 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         console.error(
           'handleVideoUpload: session or video element not initialized'
         );
-        setStatus('Error: App not initialized. Please refresh.');
+        actions.setStatus('Error: App not initialized. Please refresh.');
         return;
       }
 
       const abortController = prepareVideoLoad();
-      setIsVideoLoading(true);
-      setVideoLoadProgress(undefined);
-      setVideoLoadMessage(`Loading ${file.name}...`);
+      actions.startLoading(`Loading ${file.name}...`);
       resetVideoState();
 
       const url = URL.createObjectURL(file);
       await loadVideo(file, url, abortController, 'video');
     },
-    [prepareVideoLoad, resetVideoState, loadVideo]
+    [prepareVideoLoad, resetVideoState, loadVideo, actions]
   );
 
   // Load a sample video for a given exercise using ExerciseRegistry as source of truth
@@ -1120,22 +1142,19 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         console.error(
           `loadSampleVideo: session or video element not initialized`
         );
-        setStatus('Error: App not initialized. Please refresh.');
+        actions.setStatus('Error: App not initialized. Please refresh.');
         return;
       }
 
       const abortController = prepareVideoLoad();
-      setStatus(`Loading ${config.name.toLowerCase()} sample...`);
-      setIsVideoLoading(true);
-      setVideoLoadProgress(undefined);
-      setVideoLoadMessage(`Downloading ${config.name}...`);
+      actions.startLoading(`Downloading ${config.name}...`);
       resetVideoState();
 
       try {
         // If bundled pose track is available, fetch it first to pre-populate the cache.
         // This allows instant loading without ML extraction.
         if (config.bundledPoseTrackUrl) {
-          setVideoLoadMessage('Loading pose data...');
+          actions.setLoadingProgress(10, 'Loading pose data...');
           const poseTrackResult = await fetchAndCacheBundledPoseTrack(
             config.bundledPoseTrackUrl,
             undefined, // No local fallback - using GitHub permalink
@@ -1151,7 +1170,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             console.warn(
               `[loadSampleVideo] Failed to load bundled pose track: ${poseTrackResult.error}`
             );
-            setVideoLoadMessage(
+            actions.setLoadingProgress(
+              15,
               'Pose data unavailable, will extract from video...'
             );
           }
@@ -1163,10 +1183,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
           blob = await fetchWithProgress(
             config.url,
             (percent) => {
-              setStatus(
+              actions.setLoadingProgress(
+                percent,
                 `Downloading ${config.name.toLowerCase()}... ${percent}%`
               );
-              setVideoLoadProgress(percent);
             },
             abortController.signal
           );
@@ -1179,9 +1199,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             throw fetchError;
           }
           console.log(`Remote ${config.name} failed, falling back to local`);
-          setStatus(`Loading ${config.name.toLowerCase()} (local)...`);
-          setVideoLoadMessage('Loading from local cache...');
-          setVideoLoadProgress(undefined);
+          actions.startLoading('Loading from local cache...');
           const response = await fetch(config.localFallback, {
             signal: abortController.signal,
           });
@@ -1204,11 +1222,11 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
           return;
         }
         console.error(`Error loading ${config.name}:`, error);
-        setStatus(`Error: ${getVideoLoadErrorMessage(error, 'sample video')}`);
+        actions.error(getVideoLoadErrorMessage(error, 'sample video'));
         clearLoadingState();
       }
     },
-    [prepareVideoLoad, resetVideoState, loadVideo, clearLoadingState]
+    [prepareVideoLoad, resetVideoState, loadVideo, clearLoadingState, actions]
   );
 
   // Convenience wrappers for specific samples (maintain existing API)
@@ -1238,17 +1256,19 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         console.error('Error playing video:', err);
         // Provide user feedback for play failures
         if (err.name === 'NotAllowedError') {
-          setStatus('Playback blocked by browser. Click Play again to start.');
+          actions.setStatus(
+            'Playback blocked by browser. Click Play again to start.'
+          );
         } else if (err.name === 'NotSupportedError') {
-          setStatus('Error: Video format not supported.');
+          actions.setStatus('Error: Video format not supported.');
         } else {
-          setStatus('Error: Could not play video. Try reloading.');
+          actions.setStatus('Error: Could not play video. Try reloading.');
         }
       });
     } else {
       video.pause();
     }
-  }, []);
+  }, [actions]);
 
   const stopVideo = useCallback(() => {
     const video = videoRef.current;
@@ -1290,8 +1310,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
   // Clear position label when playing or using frame navigation
   const clearPositionLabel = useCallback(() => {
-    setCurrentPosition(null);
-  }, []);
+    actions.setPosition(null);
+  }, [actions]);
 
   // Set current rep index directly (used by gallery modal) - wraps the callback
   const setCurrentRepIndex = setCurrentRepIndexCallback;
@@ -1312,24 +1332,28 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // ========================================
   // Display Mode
   // ========================================
-  const setDisplayMode = useCallback((mode: 'both' | 'video' | 'overlay') => {
-    setAppState((prev) => ({ ...prev, displayMode: mode }));
+  const setDisplayMode = useCallback(
+    (mode: 'both' | 'video' | 'overlay') => {
+      actions.setDisplayMode(mode);
+      setAppState((prev) => ({ ...prev, displayMode: mode }));
 
-    switch (mode) {
-      case 'both':
-        if (videoRef.current) videoRef.current.style.opacity = '1';
-        if (canvasRef.current) canvasRef.current.style.display = 'block';
-        break;
-      case 'video':
-        if (videoRef.current) videoRef.current.style.opacity = '1';
-        if (canvasRef.current) canvasRef.current.style.display = 'none';
-        break;
-      case 'overlay':
-        if (videoRef.current) videoRef.current.style.opacity = '0.1';
-        if (canvasRef.current) canvasRef.current.style.display = 'block';
-        break;
-    }
-  }, []);
+      switch (mode) {
+        case 'both':
+          if (videoRef.current) videoRef.current.style.opacity = '1';
+          if (canvasRef.current) canvasRef.current.style.display = 'block';
+          break;
+        case 'video':
+          if (videoRef.current) videoRef.current.style.opacity = '1';
+          if (canvasRef.current) canvasRef.current.style.display = 'none';
+          break;
+        case 'overlay':
+          if (videoRef.current) videoRef.current.style.opacity = '0.1';
+          if (canvasRef.current) canvasRef.current.style.display = 'block';
+          break;
+      }
+    },
+    [actions]
+  );
 
   // ========================================
   // Crop Toggle
@@ -1338,8 +1362,8 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     const pipeline = pipelineRef.current;
     if (!pipeline || !cropRegion) return;
 
+    actions.toggleCrop();
     const newEnabled = !isCropEnabled;
-    setIsCropEnabled(newEnabled);
     pipeline.setCropEnabled(newEnabled);
 
     // Re-sync canvas to match the new zoom state
@@ -1347,19 +1371,19 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     requestAnimationFrame(() => {
       syncCanvasToVideo(newEnabled, cropRegion);
     });
-  }, [cropRegion, isCropEnabled, syncCanvasToVideo]);
+  }, [cropRegion, isCropEnabled, syncCanvasToVideo, actions]);
 
   // ========================================
   // Reset
   // ========================================
   const reset = useCallback(() => {
     pipelineRef.current?.reset();
-    setRepCount(0);
-    setSpineAngle(0);
-    setArmToSpineAngle(0);
-    setRepThumbnails(new Map());
+    actions.setRepCount(0);
+    actions.updateHud(0, 0, 0);
+    actions.clearThumbnails();
     // Reset exercise detection state (via extracted hook)
     resetDetectionState();
+    actions.setRepIndex(0);
     setAppState((prev) => ({
       ...prev,
       currentRepIndex: 0,
@@ -1370,7 +1394,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         lastConnectState: false,
       },
     }));
-  }, [resetDetectionState]);
+  }, [resetDetectionState, actions]);
 
   // ========================================
   // Helper Functions
