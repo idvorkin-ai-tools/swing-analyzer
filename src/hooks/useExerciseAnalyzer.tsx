@@ -48,19 +48,14 @@ import {
   type MetersPerSecond,
   type VideoHeight,
 } from '../utils/brandedTypes';
-import {
-  buildCheckpointList,
-  findNextCheckpoint,
-  findPreviousCheckpoint,
-} from '../utils/checkpointUtils';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
+import { useRepNavigation } from './useRepNavigation';
 import { calculateCanvasPlacement } from './utils/canvasSyncUtils';
 import { estimateSwingPosition, extractHudAngles } from './utils/hudUtils';
 import {
   fetchWithProgress,
-  formatPositionForDisplay,
   getFileNameFromUrl,
   getVideoLoadErrorMessage,
   isLandscapeVideo,
@@ -161,8 +156,38 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
   // Throttle for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
   const lastRepSyncTimeRef = useRef<number>(0);
-  // Ref to hold the rep sync handler (enables stable reference from event handlers)
-  const repSyncHandlerRef = useRef<((videoTime: number) => void) | null>(null);
+
+  // Helper callback for setting current rep index (updates appState)
+  const setCurrentRepIndexCallback = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= repCount) return;
+      setAppState((prev) => ({
+        ...prev,
+        currentRepIndex: index,
+      }));
+    },
+    [repCount]
+  );
+
+  // ========================================
+  // Rep Navigation (extracted hook)
+  // ========================================
+  const {
+    navigateToPreviousRep,
+    navigateToNextRep,
+    navigateToPreviousCheckpoint,
+    navigateToNextCheckpoint,
+    repSyncHandlerRef,
+  } = useRepNavigation({
+    videoRef,
+    repThumbnails,
+    repCount,
+    currentRepIndex: appState.currentRepIndex,
+    currentPosition,
+    currentPhases,
+    setCurrentRepIndex: setCurrentRepIndexCallback,
+    setCurrentPosition,
+  });
 
   // Crop state for auto-centering on person in landscape videos
   const [cropRegion, setCropRegionState] = useState<CropRegion | null>(null);
@@ -799,6 +824,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // ========================================
   // Video Playback Handlers
   // ========================================
+  // biome-ignore lint/correctness/useExhaustiveDependencies: repSyncHandlerRef is stable (ref from useRepNavigation)
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -1241,199 +1267,13 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     // Skeleton will be rendered via 'seeked' event handler
   }, []);
 
-  // ========================================
-  // Rep Navigation - seeks to same phase in target rep (or first available) and pauses
-  // ========================================
-  const navigateToPreviousRep = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const newRepIndex = Math.max(0, appState.currentRepIndex - 1);
-    if (newRepIndex === appState.currentRepIndex) return; // Already at first rep
-
-    // Find checkpoint in target rep - prefer same phase as current, fallback to first available
-    const targetRepNum = newRepIndex + 1; // repNum is 1-indexed
-    const positions = repThumbnails.get(targetRepNum);
-
-    // Try to preserve current phase (convert "Top" -> "top" for lookup)
-    const currentPhaseKey = currentPosition?.toLowerCase() ?? null;
-    const samePhaseCheckpoint = currentPhaseKey
-      ? positions?.get(currentPhaseKey)
-      : null;
-    const targetCheckpoint =
-      samePhaseCheckpoint || positions?.values().next().value;
-    const actualPosition = samePhaseCheckpoint
-      ? currentPhaseKey
-      : (positions?.keys().next().value ?? null);
-
-    video.pause(); // Pause when seeking to rep
-    if (targetCheckpoint?.videoTime !== undefined) {
-      video.currentTime = targetCheckpoint.videoTime;
-      if (actualPosition) {
-        setCurrentPosition(formatPositionForDisplay(actualPosition));
-      }
-    }
-    setAppState((prev) => ({
-      ...prev,
-      currentRepIndex: newRepIndex,
-    }));
-  }, [appState.currentRepIndex, repThumbnails, currentPosition]);
-
-  const navigateToNextRep = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || repCount <= 0) return;
-
-    const newRepIndex = Math.min(repCount - 1, appState.currentRepIndex + 1);
-    if (newRepIndex === appState.currentRepIndex) return; // Already at last rep
-
-    // Find checkpoint in target rep - prefer same phase as current, fallback to first available
-    const targetRepNum = newRepIndex + 1; // repNum is 1-indexed
-    const positions = repThumbnails.get(targetRepNum);
-
-    // Try to preserve current phase (convert "Top" -> "top" for lookup)
-    const currentPhaseKey = currentPosition?.toLowerCase() ?? null;
-    const samePhaseCheckpoint = currentPhaseKey
-      ? positions?.get(currentPhaseKey)
-      : null;
-    const targetCheckpoint =
-      samePhaseCheckpoint || positions?.values().next().value;
-    const actualPosition = samePhaseCheckpoint
-      ? currentPhaseKey
-      : (positions?.keys().next().value ?? null);
-
-    video.pause(); // Pause when seeking to rep
-    if (targetCheckpoint?.videoTime !== undefined) {
-      video.currentTime = targetCheckpoint.videoTime;
-      if (actualPosition) {
-        setCurrentPosition(formatPositionForDisplay(actualPosition));
-      }
-    }
-    setAppState((prev) => ({
-      ...prev,
-      currentRepIndex: newRepIndex,
-    }));
-  }, [repCount, appState.currentRepIndex, repThumbnails, currentPosition]);
-
-  // Set current rep index directly (used by gallery modal)
-  const setCurrentRepIndex = useCallback(
-    (index: number) => {
-      if (index < 0 || index >= repCount) return;
-      setAppState((prev) => ({
-        ...prev,
-        currentRepIndex: index,
-      }));
-    },
-    [repCount]
-  );
-
-  // ========================================
-  // Checkpoint Navigation
-  // ========================================
-
-  // Build flat list of all checkpoints sorted by time
-  // Uses currentPhases to support both swing and pistol squat exercises
-  const getAllCheckpoints = useCallback(() => {
-    return buildCheckpointList(repThumbnails, currentPhases);
-  }, [repThumbnails, currentPhases]);
-
-  // ========================================
-  // Auto-Sync Rep & Position During Playback
-  // ========================================
-  // Updates currentRepIndex and currentPosition based on video time.
-  // Called from throttled playback loop and on seek events.
-  // See ARCHITECTURE.md "Throttled Playback Sync" for design rationale.
-  const updateRepAndPositionFromTime = useCallback(
-    (videoTime: number) => {
-      const checkpoints = getAllCheckpoints();
-      if (checkpoints.length === 0) return;
-
-      // Find which rep/position we're in: last checkpoint where time >= checkpoint.videoTime
-      // Default to rep 1 before first checkpoint (per spec: show rep 1 before first rep)
-      let foundRepNum = 1;
-      let foundPosition: string | null = null;
-
-      for (const cp of checkpoints) {
-        if (videoTime >= cp.videoTime - 0.05) {
-          // Small tolerance for frame timing
-          foundRepNum = cp.repNum;
-          foundPosition = cp.position;
-        } else {
-          break; // Checkpoints are sorted, so we've passed current time
-        }
-      }
-
-      // Update rep index if changed (repNum is 1-indexed, currentRepIndex is 0-indexed)
-      // Use functional update to avoid stale closure on appState.currentRepIndex
-      const newRepIndex = foundRepNum - 1;
-      setAppState((prev) => {
-        if (newRepIndex !== prev.currentRepIndex) {
-          return { ...prev, currentRepIndex: newRepIndex };
-        }
-        return prev; // Return same reference to avoid unnecessary re-render
-      });
-
-      // Update position if found
-      if (foundPosition) {
-        setCurrentPosition(formatPositionForDisplay(foundPosition));
-      }
-    },
-    [getAllCheckpoints]
-  ); // No appState dependency needed with functional update
-
-  // Keep ref up to date for use in event handlers (avoids stale closure)
-  repSyncHandlerRef.current = updateRepAndPositionFromTime;
-
-  const navigateToNextCheckpoint = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const checkpoints = getAllCheckpoints();
-    if (checkpoints.length === 0) return;
-
-    const nextCheckpoint = findNextCheckpoint(checkpoints, video.currentTime);
-
-    if (nextCheckpoint) {
-      video.pause(); // Pause when seeking to checkpoint
-      video.currentTime = nextCheckpoint.videoTime;
-      setCurrentPosition(formatPositionForDisplay(nextCheckpoint.position));
-      // Update rep index if needed
-      setAppState((prev) => ({
-        ...prev,
-        currentRepIndex: nextCheckpoint.repNum - 1, // repNum is 1-indexed
-      }));
-    }
-    // If no next checkpoint, don't wrap around
-  }, [getAllCheckpoints]);
-
-  const navigateToPreviousCheckpoint = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const checkpoints = getAllCheckpoints();
-    if (checkpoints.length === 0) return;
-
-    const prevCheckpoint = findPreviousCheckpoint(
-      checkpoints,
-      video.currentTime
-    );
-
-    if (prevCheckpoint) {
-      video.pause(); // Pause when seeking to checkpoint
-      video.currentTime = prevCheckpoint.videoTime;
-      setCurrentPosition(formatPositionForDisplay(prevCheckpoint.position));
-      // Update rep index if needed
-      setAppState((prev) => ({
-        ...prev,
-        currentRepIndex: prevCheckpoint.repNum - 1, // repNum is 1-indexed
-      }));
-    }
-    // If no previous checkpoint, don't wrap around
-  }, [getAllCheckpoints]);
-
   // Clear position label when playing or using frame navigation
   const clearPositionLabel = useCallback(() => {
     setCurrentPosition(null);
   }, []);
+
+  // Set current rep index directly (used by gallery modal) - wraps the callback
+  const setCurrentRepIndex = setCurrentRepIndexCallback;
 
   // ========================================
   // Keyboard Navigation
