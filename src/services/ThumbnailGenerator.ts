@@ -121,14 +121,18 @@ export class ThumbnailQueue {
         this.videoSource = null;
       }
 
-      // Clear all queued requests - they can't be processed without a valid video
-      // Callbacks won't be called, but at least the queue won't grow indefinitely
-      const queueLength = this.queue.length;
+      // Clear all queued requests and call callbacks with original data (no thumbnails)
+      // This allows callers to handle the situation gracefully rather than waiting forever
+      const requests = [...this.queue];
       this.queue.length = 0;
-      if (queueLength > 0) {
+      if (requests.length > 0) {
         console.warn(
-          `[ThumbnailQueue] Cleared ${queueLength} pending requests due to video load error`
+          `[ThumbnailQueue] Calling ${requests.length} callbacks with original data due to video load error`
         );
+        for (const request of requests) {
+          // Call callback with positions unchanged (no frameImage added)
+          request.callback(request.repNumber, request.positions);
+        }
       }
     });
   }

@@ -158,7 +158,8 @@ export const DeviceService = {
       }
 
       return canvas.toDataURL('image/png');
-    } catch {
+    } catch (error) {
+      console.warn('[DeviceService] Screen capture failed:', error);
       return null;
     }
   },

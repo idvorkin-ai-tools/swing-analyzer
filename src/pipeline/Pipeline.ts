@@ -160,8 +160,13 @@ export class Pipeline {
       .subscribe({
         error: (error) => {
           console.error('Error in pipeline:', error);
+          // Error all subjects consistently so subscribers know the pipeline failed
           this.resultSubject.error(error);
           this.skeletonSubject.error(error);
+          this.thumbnailSubject.error(error);
+          this.exerciseDetectionSubject.error(error);
+          this.errorSubject.error(error);
+          this.isActive = false;
         },
         complete: () => {
           this.resultSubject.complete();
@@ -559,7 +564,7 @@ export interface PipelineProcessResult {
  */
 export interface PipelineError {
   /** Where in the pipeline the error occurred */
-  source: 'form-analyzer' | 'exercise-detection' | 'skeleton-transform';
+  source: 'form-analyzer' | 'exercise-detection';
   /** The original error */
   error: Error;
   /** Timestamp when error occurred */

@@ -636,6 +636,9 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const prevRepCountRef = useRef<number>(0);
   // Track frame index for debugging
   const frameIndexRef = useRef<number>(0);
+  // Track consecutive processing errors (for user feedback when analysis is degraded)
+  const consecutiveErrorsRef = useRef<number>(0);
+  const MAX_CONSECUTIVE_ERRORS = 5;
 
   // Process a skeleton event through the pipeline and update UI
   const processSkeletonEvent = useCallback((event: SkeletonEvent) => {
@@ -652,8 +655,16 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     let result: number;
     try {
       result = pipeline.processSkeletonEvent(event);
+      // Reset error count on success
+      consecutiveErrorsRef.current = 0;
     } catch (error) {
       console.error('[processSkeletonEvent] Pipeline processing error:', error);
+      consecutiveErrorsRef.current++;
+
+      // Surface degraded analysis to user after multiple consecutive errors
+      if (consecutiveErrorsRef.current === MAX_CONSECUTIVE_ERRORS) {
+        setStatus('Analysis experiencing errors - some frames may be skipped');
+      }
       return; // Don't crash component, just skip this frame
     }
 
@@ -863,6 +874,21 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       }
     );
 
+    // Subscribe to pipeline error events to surface analysis issues
+    const errorSubscription = pipeline.getErrorEvents().subscribe({
+      next: (pipelineError) => {
+        console.warn(
+          `[Pipeline ${pipelineError.source}] Error at ${pipelineError.videoTime?.toFixed(2) ?? 'unknown'}s:`,
+          pipelineError.error
+        );
+        // Errors are already tracked in processSkeletonEvent, but this catches
+        // errors from the RxJS streaming path as well
+      },
+      error: (error) => {
+        console.error('Error in pipeline error subscription:', error);
+      },
+    });
+
     // Subscribe to exercise detection events
     const detectionSubscription = pipeline
       .getExerciseDetectionEvents()
@@ -925,6 +951,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       stateSubscription.unsubscribe();
       skeletonSubscription.unsubscribe();
       progressSubscription.unsubscribe();
+      errorSubscription.unsubscribe();
       detectionSubscription.unsubscribe();
       session.dispose();
       inputSessionRef.current = null;
