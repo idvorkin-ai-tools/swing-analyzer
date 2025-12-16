@@ -26,7 +26,11 @@ export const DeviceService = {
   getStorageItem(key: string): string | null {
     try {
       return localStorage.getItem(key);
-    } catch {
+    } catch (error) {
+      console.warn(
+        `[DeviceService] Failed to read localStorage key '${key}':`,
+        error
+      );
       return null;
     }
   },
@@ -34,8 +38,11 @@ export const DeviceService = {
   setStorageItem(key: string, value: string): void {
     try {
       localStorage.setItem(key, value);
-    } catch {
-      // localStorage not available
+    } catch (error) {
+      console.warn(
+        `[DeviceService] Failed to save localStorage key '${key}':`,
+        error
+      );
     }
   },
 
@@ -53,7 +60,11 @@ export const DeviceService = {
     ) {
       try {
         return await DeviceMotionEventWithPermission.requestPermission();
-      } catch {
+      } catch (error) {
+        console.warn(
+          '[DeviceService] Device motion permission request failed:',
+          error
+        );
         return 'denied';
       }
     }
@@ -72,7 +83,8 @@ export const DeviceService = {
     try {
       await navigator.clipboard.writeText(text);
       return true;
-    } catch {
+    } catch (error) {
+      console.warn('[DeviceService] Failed to copy text to clipboard:', error);
       return false;
     }
   },
@@ -86,7 +98,8 @@ export const DeviceService = {
         new ClipboardItem({ [blob.type]: blob }),
       ]);
       return true;
-    } catch {
+    } catch (error) {
+      console.warn('[DeviceService] Failed to copy image to clipboard:', error);
       return false;
     }
   },
@@ -145,7 +158,8 @@ export const DeviceService = {
       }
 
       return canvas.toDataURL('image/png');
-    } catch {
+    } catch (error) {
+      console.warn('[DeviceService] Screen capture failed:', error);
       return null;
     }
   },

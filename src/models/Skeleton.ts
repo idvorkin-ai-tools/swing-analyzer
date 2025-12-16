@@ -1058,15 +1058,29 @@ export class Skeleton {
       return asHingeScore(0); // Not enough flexion to determine pattern
     }
 
+    // Guard against opposite-sign flexions (one joint extending while other flexes)
+    // which would produce invalid ratios outside 0-1 range
+    if (hipFlexion < 0 || kneeFlexion < 0) {
+      // If joints are moving in opposite directions, use the dominant flexion
+      if (hipFlexion > 0 && kneeFlexion <= 0) {
+        return asHingeScore(1); // Hip flexing while knee extending = hinge
+      }
+      if (kneeFlexion > 0 && hipFlexion <= 0) {
+        return asHingeScore(-1); // Knee flexing while hip extending = squat-like
+      }
+      return asHingeScore(0); // Both extending = neutral
+    }
+
     // Hinge ratio: how much of the total flexion is at the hip
     // In a perfect hinge: hipFlexion >> kneeFlexion, ratio approaches 1
     // In a perfect squat: kneeFlexion >> hipFlexion, ratio approaches 0
     const hingeRatio = hipFlexion / totalFlexion;
 
-    // Convert to -1 to +1 scale
+    // Convert to -1 to +1 scale and clamp to ensure valid range
     // hingeRatio of 0.7+ = good hinge (+1)
     // hingeRatio of 0.3- = squat (-1)
     // hingeRatio of 0.5 = neutral (0)
-    return asHingeScore((hingeRatio - 0.5) * 2);
+    const score = (hingeRatio - 0.5) * 2;
+    return asHingeScore(Math.max(-1, Math.min(1, score)));
   }
 }

@@ -302,6 +302,7 @@ export async function savePoseTrackToStorage(
     const transaction = db.transaction([POSETRACK_STORE_NAME], 'readwrite');
 
     transaction.onerror = () => {
+      db.close();
       reject(
         new Error(
           `Transaction failed: ${transaction.error?.message || 'Unknown error'}`
@@ -310,6 +311,7 @@ export async function savePoseTrackToStorage(
     };
 
     transaction.onabort = () => {
+      db.close();
       reject(
         new Error(
           'Transaction aborted. This may be due to storage quota limits.'
@@ -329,6 +331,7 @@ export async function savePoseTrackToStorage(
     const request = store.put(record);
 
     request.onerror = () => {
+      db.close();
       reject(new Error('Failed to save pose track'));
     };
 
@@ -359,6 +362,7 @@ export async function loadPoseTrackFromStorage(
     const transaction = db.transaction([POSETRACK_STORE_NAME], 'readonly');
 
     transaction.onerror = () => {
+      db.close();
       reject(
         new Error(
           `Transaction failed: ${transaction.error?.message || 'Unknown error'}`
@@ -367,6 +371,7 @@ export async function loadPoseTrackFromStorage(
     };
 
     transaction.onabort = () => {
+      db.close();
       reject(new Error('Transaction aborted while loading pose track.'));
     };
 
@@ -375,6 +380,7 @@ export async function loadPoseTrackFromStorage(
     const request = store.get(videoHash);
 
     request.onerror = () => {
+      db.close();
       reject(new Error('Failed to load pose track'));
     };
 
@@ -411,6 +417,7 @@ export async function deletePoseTrackFromStorage(
     const transaction = db.transaction([POSETRACK_STORE_NAME], 'readwrite');
 
     transaction.onerror = () => {
+      db.close();
       reject(
         new Error(
           `Transaction failed: ${transaction.error?.message || 'Unknown error'}`
@@ -419,6 +426,7 @@ export async function deletePoseTrackFromStorage(
     };
 
     transaction.onabort = () => {
+      db.close();
       reject(new Error('Transaction aborted while deleting pose track.'));
     };
 
@@ -427,6 +435,7 @@ export async function deletePoseTrackFromStorage(
     const request = store.delete(videoHash);
 
     request.onerror = () => {
+      db.close();
       reject(new Error('Failed to delete pose track'));
     };
 

@@ -286,11 +286,11 @@ const VideoSectionV2: React.FC = () => {
       )}
 
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Double-tap is supplementary to existing button controls */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: Double-tap gesture doesn't map to keyboard - use main controls instead */}
       <div
         className={`video-container ${getVideoContainerClass()}${isCropEnabled ? ' zoomed' : ''}`}
         onClick={handleVideoDoubleTap}
       >
-        {/* biome-ignore lint/a11y/useMediaCaption: This is a video analysis app, not media playback - no audio captions needed */}
         <video id="video" ref={videoRef} playsInline muted />
         <canvas id="output-canvas" ref={canvasRef} />
 
@@ -301,22 +301,50 @@ const VideoSectionV2: React.FC = () => {
           >
             <div className="video-tap-icon">
               {tapOverlay.type === 'pause' && (
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="white"
+                  aria-label="Paused"
+                >
+                  <title>Paused</title>
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 </svg>
               )}
               {tapOverlay.type === 'play' && (
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="white"
+                  aria-label="Playing"
+                >
+                  <title>Playing</title>
                   <path d="M8 5v14l11-7z" />
                 </svg>
               )}
               {tapOverlay.type === 'prev' && (
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="white"
+                  aria-label="Previous frame"
+                >
+                  <title>Previous frame</title>
                   <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
                 </svg>
               )}
               {tapOverlay.type === 'next' && (
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
+                <svg
+                  width="48"
+                  height="48"
+                  viewBox="0 0 24 24"
+                  fill="white"
+                  aria-label="Next frame"
+                >
+                  <title>Next frame</title>
                   <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
                 </svg>
               )}
@@ -357,13 +385,27 @@ const VideoSectionV2: React.FC = () => {
             {/* Status overlay - visible when poses exist for current frame */}
             {hasPosesForCurrentFrame && (
               <div className="hud-overlay-top">
-                {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: Tap to open gallery is supplementary, keyboard nav via gallery button */}
+                {/* biome-ignore lint/a11y/useSemanticElements: Using div with role=button to maintain HUD styling - has proper keyboard support */}
                 <div
                   className="hud-overlay-reps hud-overlay-reps--clickable"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (repCount > 0) setShowGallery(true);
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (repCount > 0) setShowGallery(true);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={repCount > 0 ? 0 : -1}
+                  aria-label={
+                    repCount > 0
+                      ? `Rep ${appState.currentRepIndex + 1} of ${repCount}. Press Enter to open gallery.`
+                      : 'No reps detected yet'
+                  }
                   title="Tap to open rep gallery"
                 >
                   <span id="rep-counter" className="hud-overlay-reps-value">
@@ -413,6 +455,8 @@ const VideoSectionV2: React.FC = () => {
           </div>
         )}
 
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: onClick only stops propagation, not user interaction - keyboard events handled by child buttons */}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: container only stops event propagation, actual interactivity in child buttons */}
         <div className="video-controls" onClick={(e) => e.stopPropagation()}>
           {/* 1. Play/Pause */}
           <button
@@ -550,7 +594,9 @@ const VideoSectionV2: React.FC = () => {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-label="View all reps"
             >
+              <title>View all reps</title>
               <rect x="3" y="3" width="7" height="7" />
               <rect x="14" y="3" width="7" height="7" />
               <rect x="14" y="14" width="7" height="7" />

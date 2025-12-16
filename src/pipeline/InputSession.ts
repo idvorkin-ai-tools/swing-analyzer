@@ -206,11 +206,11 @@ export class InputSession {
   /**
    * Clean up and release all resources
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     this.dispose$.next();
     this.dispose$.complete();
 
-    this.cleanup();
+    await this.cleanup();
 
     this.stateSubject.complete();
     this.skeletonSubject.complete();

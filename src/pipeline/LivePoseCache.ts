@@ -360,10 +360,14 @@ export class LivePoseCache {
       }
     }
 
-    // Return the closest of the two candidates
-    const leftDiff = Math.abs(times[left] - targetTime);
-    const rightDiff = Math.abs(times[right] - targetTime);
+    // Clamp indices to valid bounds to prevent NaN from out-of-bounds access
+    const clampedLeft = Math.min(Math.max(0, left), times.length - 1);
+    const clampedRight = Math.min(Math.max(0, right), times.length - 1);
 
-    return leftDiff < rightDiff ? times[left] : times[right];
+    // Return the closest of the two candidates
+    const leftDiff = Math.abs(times[clampedLeft] - targetTime);
+    const rightDiff = Math.abs(times[clampedRight] - targetTime);
+
+    return leftDiff < rightDiff ? times[clampedLeft] : times[clampedRight];
   }
 }

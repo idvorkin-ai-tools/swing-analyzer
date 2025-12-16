@@ -1,0 +1,23 @@
+{
+  "project": "swing-analyzer",
+  "lastRetroDate": "2025-12-14",
+  "lastRetroTimestamp": 1734220800000,
+  "retroHistory": [
+    {
+      "date": "2025-12-14",
+      "period": "2025-12-07 to 2025-12-14",
+      "file": "2025-12-14.md",
+      "prsCount": 20,
+      "issuesClosed": 168
+    }
+  ],
+  "instances": [
+    "swing-2",
+    "swing-3",
+    "swing-4",
+    "swing-5",
+    "swing-6",
+    "swing-7",
+    "swing-analyzer"
+  ]
+}

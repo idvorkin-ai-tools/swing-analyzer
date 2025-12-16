@@ -114,6 +114,26 @@ export class ThumbnailQueue {
     this.hiddenVideo.addEventListener('error', (e) => {
       console.error('[ThumbnailQueue] Hidden video error:', e);
       this.isVideoReady = false;
+
+      // Clean up blob URL if it exists
+      if (this.videoSource?.startsWith('blob:')) {
+        URL.revokeObjectURL(this.videoSource);
+        this.videoSource = null;
+      }
+
+      // Clear all queued requests and call callbacks with original data (no thumbnails)
+      // This allows callers to handle the situation gracefully rather than waiting forever
+      const requests = [...this.queue];
+      this.queue.length = 0;
+      if (requests.length > 0) {
+        console.warn(
+          `[ThumbnailQueue] Calling ${requests.length} callbacks with original data due to video load error`
+        );
+        for (const request of requests) {
+          // Call callback with positions unchanged (no frameImage added)
+          request.callback(request.repNumber, request.positions);
+        }
+      }
     });
   }
 
@@ -143,7 +163,7 @@ export class ThumbnailQueue {
 
     if (source instanceof File) {
       // Create blob URL from file
-      if (this.videoSource && this.videoSource.startsWith('blob:')) {
+      if (this.videoSource?.startsWith('blob:')) {
         URL.revokeObjectURL(this.videoSource);
       }
       this.videoSource = URL.createObjectURL(source);
@@ -301,17 +321,32 @@ export class ThumbnailQueue {
         return;
       }
 
-      const onSeeked = () => {
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
         this.hiddenVideo?.removeEventListener('seeked', onSeeked);
         this.hiddenVideo?.removeEventListener('error', onError);
+      };
+
+      const onSeeked = () => {
+        cleanup();
         resolve();
       };
 
       const onError = () => {
-        this.hiddenVideo?.removeEventListener('seeked', onSeeked);
-        this.hiddenVideo?.removeEventListener('error', onError);
+        cleanup();
         reject(new Error(`Failed to seek to ${time}`));
       };
+
+      // Add timeout to prevent hanging forever (5 seconds like PoseExtractor)
+      timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Seek to ${time} timed out after 5 seconds`));
+      }, 5000);
 
       this.hiddenVideo.addEventListener('seeked', onSeeked);
       this.hiddenVideo.addEventListener('error', onError);
@@ -397,7 +432,7 @@ export class ThumbnailQueue {
       clearTimeout(this.flushTimeoutId);
     }
 
-    if (this.videoSource && this.videoSource.startsWith('blob:')) {
+    if (this.videoSource?.startsWith('blob:')) {
       URL.revokeObjectURL(this.videoSource);
     }
 
