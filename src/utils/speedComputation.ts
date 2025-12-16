@@ -54,10 +54,14 @@ function computeRawSpeeds(
   if (frames.length < 2) return speeds;
 
   // Build skeletons for all frames
-  const skeletons = frames.map((frame) => {
+  const skeletons = frames.map((frame, index) => {
     try {
       return buildSkeletonFromFrame(frame.keypoints);
-    } catch {
+    } catch (error) {
+      console.warn(
+        `[speedComputation] Failed to build skeleton for frame ${index}:`,
+        error
+      );
       return null;
     }
   });

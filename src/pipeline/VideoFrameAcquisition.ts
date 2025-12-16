@@ -108,8 +108,11 @@ export class VideoFrameAcquisition implements FrameAcquisition {
    * Stop frame acquisition
    */
   stop(): void {
+    // Signal stop to existing subscriptions
     this.stop$.next();
+    // Complete and recreate the Subject to avoid issues if start() is called again
     this.stop$.complete();
+    this.stop$ = new Subject<void>();
   }
 
   /**

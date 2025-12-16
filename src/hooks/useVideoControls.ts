@@ -83,6 +83,8 @@ export interface UseVideoControlsReturn {
   isPlaying: boolean;
   videoStartTime: number | null;
   currentVideoFile: File | null;
+  /** True if frame-by-frame controls are unavailable due to transformer init failure */
+  frameControlsDisabled: boolean;
   togglePlayPause: () => void;
   nextFrame: () => void;
   previousFrame: () => void;
@@ -109,12 +111,17 @@ export function useVideoControls({
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [videoStartTime, setVideoStartTime] = useState<number | null>(null);
   const [currentVideoFile, setCurrentVideoFile] = useState<File | null>(null);
+  const [frameControlsDisabled, setFrameControlsDisabled] =
+    useState<boolean>(false);
 
   // Frame-by-frame controls
   const frameStep = 1 / 30; // Assuming 30fps video
 
   // Create a separate skeleton transformer for direct frame processing
   const directSkeletonTransformerRef = useRef<SkeletonTransformer | null>(null);
+
+  // Track current blob URL to revoke when loading new video (prevents memory leak)
+  const currentBlobUrlRef = useRef<string | null>(null);
 
   // Add video event listeners to manage UI state only (not pipeline)
   useEffect(() => {
@@ -187,14 +194,27 @@ export function useVideoControls({
           'Failed to initialize direct skeleton transformer:',
           error
         );
+        // Disable frame-by-frame controls since transformer failed
+        setFrameControlsDisabled(true);
       }
     };
 
     initDirectTransformer();
 
-    // Cleanup
+    // Cleanup - dispose transformer to release GPU resources
     return () => {
-      directSkeletonTransformerRef.current = null;
+      if (directSkeletonTransformerRef.current) {
+        // Call dispose if available to release WebGL/GPU resources
+        if (
+          'dispose' in directSkeletonTransformerRef.current &&
+          typeof directSkeletonTransformerRef.current.dispose === 'function'
+        ) {
+          (
+            directSkeletonTransformerRef.current as { dispose: () => void }
+          ).dispose();
+        }
+        directSkeletonTransformerRef.current = null;
+      }
     };
   }, []);
 
@@ -379,8 +399,14 @@ export function useVideoControls({
       });
       setCurrentVideoFile(videoFile);
 
+      // Revoke any existing blob URL before creating new one
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+      }
+
       // Use blob URL to avoid double-fetching the video
       const blobUrl = URL.createObjectURL(blob);
+      currentBlobUrlRef.current = blobUrl;
       await frameAcquisitionRef.current.loadVideoFromURL(blobUrl);
       setStatus('Video loaded. Press Play to start.');
       recordVideoLoad({ source: 'hardcoded', fileName: 'sample-video.mp4' });
@@ -425,8 +451,14 @@ export function useVideoControls({
       // Reset state and stop current video
       resetVideoAndState();
 
+      // Revoke any existing blob URL before creating new one
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+      }
+
       const file = event.target.files[0];
       const fileURL = URL.createObjectURL(file);
+      currentBlobUrlRef.current = fileURL;
 
       // Store the video file for pose extraction
       setCurrentVideoFile(file);
@@ -447,6 +479,16 @@ export function useVideoControls({
     },
     [frameAcquisitionRef, videoRef, resetVideoAndState, setStatus]
   );
+
+  // Cleanup blob URL on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (currentBlobUrlRef.current) {
+        URL.revokeObjectURL(currentBlobUrlRef.current);
+        currentBlobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   // Stop video but preserve rep count and videoStartTime (for filmstrip seeking)
   const stopVideo = useCallback(() => {
@@ -474,6 +516,7 @@ export function useVideoControls({
     isPlaying,
     videoStartTime,
     currentVideoFile,
+    frameControlsDisabled,
     togglePlayPause,
     nextFrame,
     previousFrame,

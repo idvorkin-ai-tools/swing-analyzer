@@ -309,20 +309,19 @@ export class VideoFileSkeletonSource implements SkeletonSource {
     // Create abort controller for cancellation
     this.abortController = new AbortController();
 
+    // Listener reference for cleanup
+    let abortListener: (() => void) | null = null;
+
     // Link external signal to our internal abort controller
     if (externalSignal) {
       if (externalSignal.aborted) {
         this.abortController.abort();
       } else {
-        // Use { once: true } to auto-remove listener after first invocation
-        // This prevents memory leaks if extraction completes before signal aborts
-        externalSignal.addEventListener(
-          'abort',
-          () => {
-            this.abortController?.abort();
-          },
-          { once: true }
-        );
+        // Store listener reference so we can remove it in finally block
+        abortListener = () => {
+          this.abortController?.abort();
+        };
+        externalSignal.addEventListener('abort', abortListener, { once: true });
       }
     }
 
@@ -401,6 +400,10 @@ export class VideoFileSkeletonSource implements SkeletonSource {
         throw error;
       }
     } finally {
+      // Clean up external signal listener to prevent memory leaks
+      if (externalSignal && abortListener) {
+        externalSignal.removeEventListener('abort', abortListener);
+      }
       this.abortController = null;
     }
   }

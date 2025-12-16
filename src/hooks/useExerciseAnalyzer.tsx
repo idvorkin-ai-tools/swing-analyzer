@@ -205,6 +205,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const checkpointGridRef = useRef<HTMLDivElement>(null);
 
   // Core refs
   const inputSessionRef = useRef<InputSession | null>(null);
@@ -648,7 +649,13 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     }
 
     // Process through pipeline (updates rep count, form state, etc.)
-    const result = pipeline.processSkeletonEvent(event);
+    let result: number;
+    try {
+      result = pipeline.processSkeletonEvent(event);
+    } catch (error) {
+      console.error('[processSkeletonEvent] Pipeline processing error:', error);
+      return; // Don't crash component, just skip this frame
+    }
 
     // Increment frame counter
     frameIndexRef.current++;
@@ -1715,7 +1722,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     videoRef,
     canvasRef,
     fileInputRef,
-    checkpointGridRef: useRef<HTMLDivElement>(null),
+    checkpointGridRef,
     pipelineRef,
 
     // Actions

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BugReportData } from '../hooks/useBugReporter';
 import { DeviceService } from '../services/DeviceService';
 
@@ -29,24 +29,31 @@ export function BugReportModal({
   const [submitted, setSubmitted] = useState(false);
   const [hasScreenshotOnClipboard, setHasScreenshotOnClipboard] =
     useState(false);
-  const [wasOpen, setWasOpen] = useState(false);
   const isCapturingRef = useRef(false);
+  const prevIsOpenRef = useRef(isOpen);
 
-  // Reset form when modal opens (using wasOpen to detect transition)
+  // Reset form when modal opens (using useEffect to avoid setState during render)
   // Skip reset if we're just reopening after screenshot capture
-  if (isOpen && !wasOpen) {
-    setWasOpen(true);
-    if (!isCapturingRef.current) {
-      setTitle(defaultData.title);
-      setDescription(defaultData.description);
-      setIncludeMetadata(defaultData.includeMetadata);
-      setScreenshot(null);
-      setSubmitted(false);
+  useEffect(() => {
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    if (isOpen && !wasOpen) {
+      if (!isCapturingRef.current) {
+        setTitle(defaultData.title);
+        setDescription(defaultData.description);
+        setIncludeMetadata(defaultData.includeMetadata);
+        setScreenshot(null);
+        setSubmitted(false);
+      }
+      isCapturingRef.current = false;
     }
-    isCapturingRef.current = false;
-  } else if (!isOpen && wasOpen) {
-    setWasOpen(false);
-  }
+  }, [
+    isOpen,
+    defaultData.title,
+    defaultData.description,
+    defaultData.includeMetadata,
+  ]);
 
   const handleSubmit = useCallback(async () => {
     const result = await onSubmit({

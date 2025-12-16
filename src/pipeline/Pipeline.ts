@@ -59,6 +59,7 @@ export class Pipeline {
   private skeletonSubject = new Subject<SkeletonEvent>();
   private thumbnailSubject = new Subject<ThumbnailEvent>();
   private exerciseDetectionSubject = new Subject<DetectionResult>();
+  private errorSubject = new Subject<PipelineError>();
 
   // Form analyzer - plugin for exercise-specific analysis
   private formAnalyzer: FormAnalyzer;
@@ -142,6 +143,13 @@ export class Pipeline {
               }
             } catch (error) {
               console.error('Error in form analyzer processFrame:', error);
+              this.errorSubject.next({
+                source: 'form-analyzer',
+                error:
+                  error instanceof Error ? error : new Error(String(error)),
+                timestamp: skeletonEvent.poseEvent.frameEvent.timestamp,
+                videoTime: skeletonEvent.poseEvent.frameEvent.videoTime,
+              });
             }
           }
         }),
@@ -188,6 +196,14 @@ export class Pipeline {
   }
 
   /**
+   * Get an observable for pipeline errors
+   * Subscribe to be notified when form analysis or detection fails
+   */
+  getErrorEvents(): Observable<PipelineError> {
+    return this.errorSubject.asObservable();
+  }
+
+  /**
    * Stop the pipeline processing
    */
   stop(): void {
@@ -200,6 +216,21 @@ export class Pipeline {
       this.pipelineSubscription.unsubscribe();
       this.pipelineSubscription = null;
     }
+  }
+
+  /**
+   * Dispose of all pipeline resources and complete all subjects.
+   * Call this when the pipeline is no longer needed to prevent memory leaks.
+   */
+  dispose(): void {
+    this.stop();
+
+    // Complete all subjects to release subscribers
+    this.resultSubject.complete();
+    this.skeletonSubject.complete();
+    this.thumbnailSubject.complete();
+    this.exerciseDetectionSubject.complete();
+    this.errorSubject.complete();
   }
 
   /**
@@ -245,12 +276,12 @@ export class Pipeline {
   async processFrameAsync(): Promise<PipelineProcessResult | null> {
     // Get current frame from frame acquisition
     const frame = this.frameAcquisition.getCurrentFrame();
+    // Safely get video time - only HTMLVideoElement has currentTime property
+    const videoTime = frame instanceof HTMLVideoElement ? frame.currentTime : 0;
     const frameEvent: FrameEvent = {
       frame,
       timestamp: asTimestampMs(performance.now()),
-      videoTime: asVideoTimeSeconds(
-        (frame as HTMLVideoElement).currentTime ?? 0
-      ),
+      videoTime: asVideoTimeSeconds(videoTime),
     };
 
     // Transform to skeleton using async method
@@ -285,6 +316,12 @@ export class Pipeline {
       };
     } catch (error) {
       console.error('Error in form analyzer processFrame:', error);
+      this.errorSubject.next({
+        source: 'form-analyzer',
+        error: error instanceof Error ? error : new Error(String(error)),
+        timestamp: frameEvent.timestamp,
+        videoTime: frameEvent.videoTime,
+      });
       return null;
     }
   }
@@ -325,6 +362,12 @@ export class Pipeline {
             '[Pipeline] Exercise detection error, continuing with current analyzer:',
             error
           );
+          this.errorSubject.next({
+            source: 'exercise-detection',
+            error: error instanceof Error ? error : new Error(String(error)),
+            timestamp: skeletonEvent.poseEvent.frameEvent.timestamp,
+            videoTime: skeletonEvent.poseEvent.frameEvent.videoTime,
+          });
           // Don't block form analysis if detection fails
         }
       }
@@ -358,6 +401,12 @@ export class Pipeline {
         }
       } catch (error) {
         console.error('Error in form analyzer processFrame:', error);
+        this.errorSubject.next({
+          source: 'form-analyzer',
+          error: error instanceof Error ? error : new Error(String(error)),
+          timestamp: skeletonEvent.poseEvent.frameEvent.timestamp,
+          videoTime: skeletonEvent.poseEvent.frameEvent.videoTime,
+        });
       }
     }
 
@@ -502,4 +551,19 @@ export interface PipelineProcessResult {
   position: string | null;
   angles: Record<string, number>;
   repCompleted: boolean;
+}
+
+/**
+ * Error event from pipeline processing
+ * Emitted when form analysis or other processing fails
+ */
+export interface PipelineError {
+  /** Where in the pipeline the error occurred */
+  source: 'form-analyzer' | 'exercise-detection' | 'skeleton-transform';
+  /** The original error */
+  error: Error;
+  /** Timestamp when error occurred */
+  timestamp: number;
+  /** Video time if available */
+  videoTime?: number;
 }
