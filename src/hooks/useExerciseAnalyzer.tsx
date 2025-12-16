@@ -53,96 +53,24 @@ import {
   findNextCheckpoint,
   findPreviousCheckpoint,
 } from '../utils/checkpointUtils';
-import { calculateDepthFromKeypoints } from '../utils/depthCalculation';
 import { calculateStableCropRegion } from '../utils/videoCrop';
 import { SkeletonRenderer } from '../viewmodels/SkeletonRenderer';
 import { useKeyboardNavigation } from './useKeyboardNavigation';
+import { calculateCanvasPlacement } from './utils/canvasSyncUtils';
+import { estimateSwingPosition, extractHudAngles } from './utils/hudUtils';
+import {
+  fetchWithProgress,
+  formatPositionForDisplay,
+  getFileNameFromUrl,
+  getVideoLoadErrorMessage,
+  isLandscapeVideo,
+} from './utils/videoLoadingUtils';
 
 // Throttle interval for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
 const REP_SYNC_INTERVAL_MS = 1000; // 1 second
 
 // Default phases (swing) - used when resetting before exercise detection runs
 const DEFAULT_PHASES = [...PHASE_ORDER];
-
-/**
- * Get filename from URL path, with fallback for edge cases.
- */
-function getFileNameFromUrl(url: string): string {
-  const pathParts = url.split('/');
-  const fileName = pathParts[pathParts.length - 1];
-  return fileName || 'sample-video.webm';
-}
-
-/**
- * Convert error to user-friendly message for video loading failures.
- */
-function getVideoLoadErrorMessage(error: unknown, context: string): string {
-  if (error instanceof DOMException && error.name === 'QuotaExceededError') {
-    return 'Storage full. Clear browser data and try again.';
-  }
-  if (error instanceof Error) {
-    if (error.message.includes('Timeout')) {
-      return 'Video load timed out. Check your network and try again.';
-    }
-    if (error.message.includes('fetch') || error.message.includes('Network')) {
-      return 'Network error loading video. Check your connection.';
-    }
-    if (error.message.includes('model')) {
-      return 'Failed to load pose detection. Check network and refresh.';
-    }
-    if (
-      error.message.includes('format') ||
-      error.message.includes('supported')
-    ) {
-      return 'Video format not supported by your browser.';
-    }
-  }
-  return `Could not load ${context}`;
-}
-
-// Helper for consistent position display (e.g., "top" → "Top")
-const formatPositionForDisplay = (position: string): string =>
-  position.charAt(0).toUpperCase() + position.slice(1).toLowerCase();
-
-/**
- * Fetch a video with download progress reporting.
- * Returns the blob and reports progress via callback.
- */
-async function fetchWithProgress(
-  url: string,
-  onProgress: (percent: number) => void,
-  signal?: AbortSignal
-): Promise<Blob> {
-  const response = await fetch(url, { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch: ${response.status}`);
-  }
-
-  const contentLength = response.headers.get('content-length');
-  if (!contentLength || !response.body) {
-    // No content-length header or no body - fall back to regular blob()
-    return response.blob();
-  }
-
-  const total = parseInt(contentLength, 10);
-  let loaded = 0;
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    chunks.push(value);
-    loaded += value.length;
-    onProgress(Math.round((loaded / total) * 100));
-  }
-
-  return new Blob(chunks as BlobPart[], {
-    type: response.headers.get('content-type') || 'video/webm',
-  });
-}
 
 export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // ========================================
@@ -245,113 +173,59 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // Canvas Sync (for skeleton alignment)
   // ========================================
   // Syncs canvas position/size to match video's rendered area.
-  // When zoomed (object-fit: cover), canvas is sized to match the scaled video content
-  // and positioned with negative offset so the same region is visible.
+  // Uses pure utility functions for calculations (see canvasSyncUtils.ts).
   const syncCanvasToVideo = useCallback(
     (isZoomed: boolean, crop: CropRegion | null) => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (!video || !canvas || video.videoWidth === 0) return;
 
-      // Update landscape state based on video aspect ratio (threshold > 1.2)
-      const aspectRatio = video.videoWidth / video.videoHeight;
-      setIsLandscape(aspectRatio > 1.2);
+      // Update landscape state using extracted utility
+      setIsLandscape(isLandscapeVideo(video.videoWidth, video.videoHeight));
 
       // Set canvas internal dimensions to match video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Get video element's bounding box
+      // Get dimensions for calculation
       const videoRect = video.getBoundingClientRect();
       const container = canvas.parentElement;
       const containerRect = container?.getBoundingClientRect();
 
-      // Calculate video element's position relative to container
-      const videoOffsetX = containerRect
-        ? videoRect.left - containerRect.left
-        : 0;
-      const videoOffsetY = containerRect
-        ? videoRect.top - containerRect.top
-        : 0;
-
-      const videoAspect = video.videoWidth / video.videoHeight;
-      const containerAspect = videoRect.width / videoRect.height;
+      const videoOffset = {
+        x: containerRect ? videoRect.left - containerRect.left : 0,
+        y: containerRect ? videoRect.top - containerRect.top : 0,
+      };
 
       // Clear any transforms first
       canvas.style.transform = '';
       canvas.style.transformOrigin = '';
 
-      if (isZoomed && crop) {
-        // ===== ZOOMED MODE: object-fit: cover simulation =====
-        // Calculate scale factor for cover behavior
-        const scaleX = videoRect.width / video.videoWidth;
-        const scaleY = videoRect.height / video.videoHeight;
-        const coverScale = Math.max(scaleX, scaleY);
+      // Use extracted pure function for placement calculation
+      const placement = calculateCanvasPlacement(
+        { videoWidth: video.videoWidth, videoHeight: video.videoHeight },
+        { width: videoRect.width, height: videoRect.height },
+        videoOffset,
+        isZoomed,
+        crop
+      );
 
-        // Scaled video dimensions (may be larger than container)
-        const scaledWidth = video.videoWidth * coverScale;
-        const scaledHeight = video.videoHeight * coverScale;
+      // Apply placement to canvas
+      canvas.style.width = `${placement.width}px`;
+      canvas.style.height = `${placement.height}px`;
+      canvas.style.left = `${placement.left}px`;
+      canvas.style.top = `${placement.top}px`;
 
-        // Calculate crop center as fraction
-        const cropCenterX = (crop.x + crop.width / 2) / video.videoWidth;
-        const cropCenterY = (crop.y + crop.height / 2) / video.videoHeight;
-
-        // Calculate offset to center on crop region
-        // object-position percentage works on the overflow area
-        const overflowX = scaledWidth - videoRect.width;
-        const overflowY = scaledHeight - videoRect.height;
-        const offsetX = -overflowX * cropCenterX;
-        const offsetY = -overflowY * cropCenterY;
-
-        // Set canvas size to match scaled video content
-        canvas.style.width = `${scaledWidth}px`;
-        canvas.style.height = `${scaledHeight}px`;
-        canvas.style.left = `${videoOffsetX + offsetX}px`;
-        canvas.style.top = `${videoOffsetY + offsetY}px`;
-
-        // Set video's object-position to show same region
-        video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;
-
-        console.log(
-          `[Canvas] Zoomed: scale=${coverScale.toFixed(3)}, size=${scaledWidth.toFixed(0)}x${scaledHeight.toFixed(0)}, offset=(${offsetX.toFixed(0)}, ${offsetY.toFixed(0)})`
-        );
+      // Apply object-position to video if provided
+      if (placement.objectPosition) {
+        video.style.objectPosition = placement.objectPosition;
       } else {
-        // ===== NORMAL MODE: object-fit: contain (letterboxing) =====
-        let renderedWidth: number;
-        let renderedHeight: number;
-        let offsetX: number;
-        let offsetY: number;
-
-        if (videoAspect > containerAspect) {
-          // Video is wider - letterbox top/bottom
-          renderedWidth = videoRect.width;
-          renderedHeight = videoRect.width / videoAspect;
-          offsetX = 0;
-          offsetY = (videoRect.height - renderedHeight) / 2;
-        } else {
-          // Video is taller - letterbox left/right
-          renderedHeight = videoRect.height;
-          renderedWidth = videoRect.height * videoAspect;
-          offsetX = (videoRect.width - renderedWidth) / 2;
-          offsetY = 0;
-        }
-
-        // Position canvas to match video's letterboxed area
-        const finalX = videoOffsetX + offsetX;
-        const finalY = videoOffsetY + offsetY;
-
-        canvas.style.width = `${renderedWidth}px`;
-        canvas.style.height = `${renderedHeight}px`;
-        canvas.style.left = `${finalX}px`;
-        canvas.style.top = `${finalY}px`;
-
-        // Clear video object-position
         video.style.objectPosition = '';
-
-        console.log(
-          `[Canvas] Normal: ${renderedWidth.toFixed(0)}x${renderedHeight.toFixed(0)} at (${finalX.toFixed(0)},${finalY.toFixed(0)})`
-        );
       }
+
+      console.log(
+        `[Canvas] ${isZoomed ? 'Zoomed' : 'Normal'}: ${placement.width.toFixed(0)}x${placement.height.toFixed(0)} at (${placement.left.toFixed(0)},${placement.top.toFixed(0)})`
+      );
     },
     []
   );
@@ -555,68 +429,30 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // HUD Update Helper
   // ========================================
   // Updates HUD display from a skeleton (called during playback and seek)
-  // Uses precomputed speed (smoothed, computed in one-time pass after pose extraction)
+  // Uses pure utility functions for calculations (see hudUtils.ts)
   const updateHudFromSkeleton = useCallback(
     (skeleton: Skeleton, _videoTime?: number, precomputedSpeed?: number) => {
-      const spine = Math.round(skeleton.getSpineAngle() || 0);
-      const arm = Math.round(skeleton.getArmToVerticalAngle() || 0);
-      const speed = precomputedSpeed ?? 0;
+      // Get video height for depth calculation
+      const videoHeight: VideoHeight = videoRef.current?.videoHeight
+        ? asVideoHeight(videoRef.current.videoHeight)
+        : DEFAULT_VIDEO_HEIGHT;
+
+      // Use extracted pure function for angle calculations
+      const angles = extractHudAngles(skeleton, videoHeight, precomputedSpeed);
 
       // Update legacy individual state (for backwards compatibility)
-      setSpineAngle(spine);
-      setArmToSpineAngle(arm);
+      setSpineAngle(angles.spineAngle);
+      setArmToSpineAngle(angles.armAngle);
       if (precomputedSpeed !== undefined) {
         setWristVelocity(asMetersPerSecond(precomputedSpeed));
       }
 
       // Update generic angles map for dynamic HUD rendering
-      // Include all angles that any exercise might need
-      const leftKnee = skeleton.getKneeAngleForSide('left') || 180;
-      const rightKnee = skeleton.getKneeAngleForSide('right') || 180;
-      // Use the more bent knee (lower angle = deeper squat)
-      const workingKnee = Math.min(leftKnee, rightKnee);
-      const leftHip = skeleton.getHipAngleForSide('left') || 180;
-      const rightHip = skeleton.getHipAngleForSide('right') || 180;
-      // Use the more bent hip
-      const workingHip = Math.min(leftHip, rightHip);
+      // Convert HudAngles to Record<string, number> for state
+      setCurrentAngles({ ...angles });
 
-      // Depth percentage using ear Y position (more accurate than knee angle)
-      // Use actual video height for proper coordinate normalization
-      const videoHeight: VideoHeight = videoRef.current?.videoHeight
-        ? asVideoHeight(videoRef.current.videoHeight)
-        : DEFAULT_VIDEO_HEIGHT;
-      const depth = calculateDepthFromKeypoints(
-        skeleton.getKeypoints(),
-        videoHeight
-      );
-
-      const angles: Record<string, number> = {
-        // Kettlebell swing metrics
-        spineAngle: spine,
-        armAngle: arm,
-        speed,
-        // Pistol squat metrics - use working leg (more bent)
-        kneeAngle: Math.round(workingKnee),
-        hipAngle: Math.round(workingHip),
-        depth,
-      };
-      setCurrentAngles(angles);
-
-      // Estimate position from spine angle (stateless, for HUD display during seek)
-      // Position thresholds based on spine angle:
-      //   top: ~10° (upright), connect: ~45°, release: ~37°, bottom: ~75° (hinged)
-      let position: string | null = null;
-
-      if (spine < 25) {
-        position = 'Top';
-      } else if (spine >= 25 && spine < 41) {
-        position = 'Release'; // ~37° ideal
-      } else if (spine >= 41 && spine < 60) {
-        position = 'Connect'; // ~45° ideal
-      } else if (spine >= 60) {
-        position = 'Bottom'; // ~75° ideal
-      }
-
+      // Estimate position from spine angle using extracted pure function
+      const position = estimateSwingPosition(angles.spineAngle);
       if (position) {
         setStatus(position);
       }
