@@ -68,28 +68,11 @@ import {
 // Throttle interval for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
 const REP_SYNC_INTERVAL_MS = 1000; // 1 second
 
-export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
+export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
   // ========================================
   // Centralized State (Reducer)
   // ========================================
   const { state: analyzerState, actions } = useAnalyzerState();
-
-  // Legacy appState for backwards compatibility (will be removed in future)
-  const [appState, setAppState] = useState<AppState>({
-    displayMode: 'both',
-    isModelLoaded: false,
-    isProcessing: false,
-    repCounter: {
-      count: 0,
-      isConnect: false,
-      lastConnectState: false,
-      connectThreshold: 45,
-    },
-    showBodyParts: true,
-    bodyPartDisplayTime: 0.5,
-    currentRepIndex: 0,
-    ...initialState,
-  });
 
   // ========================================
   // State from Reducer (single source of truth)
@@ -132,6 +115,31 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // Is playing derived from video state
   const isPlaying = isVideoPlayingSelector(analyzerState);
 
+  // Derived appState for backwards compatibility with consumers
+  const appState: AppState = useMemo(
+    () => ({
+      displayMode: analyzerState.view.displayMode,
+      isModelLoaded: analyzerState.isModelLoaded,
+      isProcessing: isPlaying,
+      repCounter: {
+        count: repCount,
+        isConnect: false,
+        lastConnectState: false,
+        connectThreshold: 45,
+      },
+      showBodyParts: true,
+      bodyPartDisplayTime: 0.5,
+      currentRepIndex: analyzerState.currentRepIndex,
+    }),
+    [
+      analyzerState.view.displayMode,
+      analyzerState.isModelLoaded,
+      analyzerState.currentRepIndex,
+      isPlaying,
+      repCount,
+    ]
+  );
+
   // ========================================
   // Remaining useState (to be migrated)
   // ========================================
@@ -171,16 +179,13 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // Throttle for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
   const lastRepSyncTimeRef = useRef<number>(0);
 
-  // Helper callback for setting current rep index (updates appState)
+  // Helper callback for setting current rep index
   const setCurrentRepIndexCallback = useCallback(
     (index: number) => {
       if (index < 0 || index >= repCount) return;
-      setAppState((prev) => ({
-        ...prev,
-        currentRepIndex: index,
-      }));
+      actions.setRepIndex(index);
     },
-    [repCount]
+    [repCount, actions]
   );
 
   // ========================================
@@ -751,7 +756,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       // Mark model as loaded once we have an active source
       if (state.type === 'video-file' && state.sourceState.type === 'active') {
         actions.modelLoaded();
-        setAppState((prev) => ({ ...prev, isModelLoaded: true }));
       }
     });
 
@@ -820,7 +824,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
 
     // Mark as ready
     actions.modelLoaded();
-    setAppState((prev) => ({ ...prev, isModelLoaded: true }));
 
     // Set up session recorder pipeline state getter for debugging
     const video = videoRef.current;
@@ -880,21 +883,18 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     const handlePlay = () => {
       isPlayingRef.current = true;
       actions.play();
-      setAppState((prev) => ({ ...prev, isProcessing: true }));
       recordPlaybackStart({ videoTime: video.currentTime });
     };
 
     const handlePause = () => {
       isPlayingRef.current = false;
       actions.pause();
-      setAppState((prev) => ({ ...prev, isProcessing: false }));
       recordPlaybackPause({ videoTime: video.currentTime });
     };
 
     const handleEnded = () => {
       isPlayingRef.current = false;
       actions.videoEnded();
-      setAppState((prev) => ({ ...prev, isProcessing: false }));
       // Don't reset rep count when video ends - just stop processing
     };
 
@@ -1335,7 +1335,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const setDisplayMode = useCallback(
     (mode: 'both' | 'video' | 'overlay') => {
       actions.setDisplayMode(mode);
-      setAppState((prev) => ({ ...prev, displayMode: mode }));
 
       switch (mode) {
         case 'both':
@@ -1384,16 +1383,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     // Reset exercise detection state (via extracted hook)
     resetDetectionState();
     actions.setRepIndex(0);
-    setAppState((prev) => ({
-      ...prev,
-      currentRepIndex: 0,
-      repCounter: {
-        ...prev.repCounter,
-        count: 0,
-        isConnect: false,
-        lastConnectState: false,
-      },
-    }));
   }, [resetDetectionState, actions]);
 
   // ========================================
