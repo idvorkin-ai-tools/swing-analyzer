@@ -148,7 +148,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    exclude: ['e2e-tests/**', 'node_modules/**'],
+    exclude: ['e2e-tests/**', 'node_modules/**', '.auditor_venv/**'],
     setupFiles: ['./src/test/setup.ts'],
   },
 });

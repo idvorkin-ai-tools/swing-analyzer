@@ -58,7 +58,7 @@ import { isLandscapeVideo } from './utils/videoLoadingUtils';
 // Throttle interval for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
 const REP_SYNC_INTERVAL_MS = 1000; // 1 second
 
-export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
+export function useExerciseAnalyzer() {
   // ========================================
   // Centralized State (Reducer)
   // ========================================
@@ -159,6 +159,10 @@ export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
 
   // Track if cache is being processed (between 'active' state and 'batchComplete')
   const [isCacheProcessing, setIsCacheProcessing] = useState<boolean>(false);
+
+  // Ref for isDetectionLocked to avoid stale closure in subscriptions
+  // The subscription reads from this ref instead of capturing the state value
+  const isDetectionLockedRef = useRef<boolean>(false);
 
   // Throttle for rep/position sync during playback (see ARCHITECTURE.md "Throttled Playback Sync")
   const lastRepSyncTimeRef = useRef<number>(0);
@@ -285,6 +289,12 @@ export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
     repThumbnailsRef.current = repThumbnails;
   }, [repThumbnails]);
 
+  // Keep isDetectionLockedRef in sync with state for subscription access
+  // This avoids stale closure bugs where the subscription captures old values
+  useEffect(() => {
+    isDetectionLockedRef.current = isDetectionLocked;
+  }, [isDetectionLocked]);
+
   // Re-sync canvas on window resize
   useEffect(() => {
     const handleResize = () => {
@@ -325,9 +335,14 @@ export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
   // Cleanup Object URL and abort controller on unmount
   useEffect(() => {
     return () => {
-      // Revoke any remaining blob URL to prevent memory leak
-      if (currentVideoUrlRef.current?.startsWith('blob:')) {
-        URL.revokeObjectURL(currentVideoUrlRef.current);
+      const urlToCleanup = currentVideoUrlRef.current;
+      // Only revoke blob URL if it's not currently assigned to the video element
+      // This prevents double-revocation when a new video was loaded (which already cleaned up)
+      if (
+        urlToCleanup?.startsWith('blob:') &&
+        videoRef.current?.src !== urlToCleanup
+      ) {
+        URL.revokeObjectURL(urlToCleanup);
       }
       // Abort any in-flight video load
       videoLoadAbortControllerRef.current?.abort();
@@ -719,13 +734,14 @@ export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
           const workingLegFromPipeline = formAnalyzer.getWorkingLeg?.() ?? null;
 
           // Use extracted hook to handle detection (manages lock state, phases, etc.)
+          // Read from ref to avoid stale closure - the ref is kept in sync via useEffect
           handleDetectionEvent(
             {
               exercise: detection.exercise,
               confidence: detection.confidence,
               workingLeg: workingLegFromPipeline,
             },
-            isDetectionLocked
+            isDetectionLockedRef.current
           );
         },
         error: (error) => {
@@ -787,7 +803,9 @@ export function useExerciseAnalyzer(_initialState?: Partial<AppState>) {
     updateHudFromSkeleton,
     handleDetectionEvent,
     handleLegacyDetectionLock,
-    isDetectionLocked,
+    // NOTE: isDetectionLocked is intentionally NOT in deps - we use isDetectionLockedRef
+    // to avoid stale closure bugs and prevent tearing down the entire InputSession
+    // when detection locks (which would cause frame loss during extraction)
     actions,
   ]);
 
