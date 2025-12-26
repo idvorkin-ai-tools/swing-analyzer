@@ -1,0 +1,133 @@
+name: Deploy to Surge
+
+on:
+  workflow_run:
+    workflows: ["Build and Test"]
+    types: [completed]
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  deploy:
+    # Deploy any successful build - workflow_run pattern is safe because:
+    # - Build runs untrusted PR code WITHOUT secrets
+    # - Deploy runs WITH secrets but only deploys static artifacts (no code execution)
+    if: |
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    name: Deploy to Surge
+    environment: surge-deploy
+
+    steps:
+      - name: Get deployment info
+        id: info
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const isMain = context.payload.workflow_run.event === 'push';
+
+            if (isMain) {
+              core.setOutput('artifact_name', 'dist-main');
+              core.setOutput('domain', '${{ secrets.SURGE_DOMAIN }}');
+              core.setOutput('is_pr', 'false');
+              return;
+            }
+
+            // For PRs, look up PR number from commit SHA (works with forks)
+            const headSha = context.payload.workflow_run.head_sha;
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.payload.workflow_run.head_repository.owner.login}:${context.payload.workflow_run.head_branch}`
+            });
+
+            const pr = prs.find(p => p.head.sha === headSha);
+            if (pr) {
+              core.setOutput('artifact_name', `dist-pr-${pr.number}`);
+              core.setOutput('domain', `pr-${pr.number}-swing-analyzer.surge.sh`);
+              core.setOutput('pr_number', pr.number);
+              core.setOutput('is_pr', 'true');
+            } else {
+              core.setFailed(`Could not find PR for SHA ${headSha}`);
+            }
+
+      - name: Download build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ steps.info.outputs.artifact_name }}
+          path: dist
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Deploy to Surge
+        run: npx surge ./dist "${{ steps.info.outputs.domain }}" --token "${{ secrets.SURGE_TOKEN }}"
+
+      - name: Comment PR with preview URL
+        if: steps.info.outputs.is_pr == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const prNumber = ${{ steps.info.outputs.pr_number }};
+            const domain = '${{ steps.info.outputs.domain }}';
+            const body = `## Surge Preview
+
+            Your preview is ready!
+
+            **URL:** https://${domain}
+
+            This preview will be automatically deleted when the PR is closed.`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const botComment = comments.find(c => c.body.includes('Surge Preview'));
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: body
+              });
+            }
+
+  teardown:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    name: Teardown PR Preview
+    environment: surge-deploy
+
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Teardown Surge deployment
+        run: npx surge teardown "pr-${{ github.event.pull_request.number }}-swing-analyzer.surge.sh" --token "${{ secrets.SURGE_TOKEN }}"
