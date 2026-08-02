@@ -274,6 +274,38 @@ describe('VideoFileSkeletonSource', () => {
       expect(extractPosesFromVideo).not.toHaveBeenCalled();
     });
 
+    it('keeps the cache when the video measures SLOWER than the cached track', async () => {
+      // 25fps source, track sampled at 1/30: the frames really are 1/30 apart
+      // (extraction seeks to frameIndex/fps), some just repeat. Index math
+      // still holds, so re-extracting would burn minutes to fix nothing.
+      const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
+      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(25);
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(extractPosesFromVideo).not.toHaveBeenCalled();
+    });
+
+    it('does not stamp a measurement that disagrees, so a cleaner one can re-judge', async () => {
+      // The estimator samples 12 frames from a hidden, playing element; dropped
+      // presentations read LOW. Stamping on such a reading would exempt the
+      // track from every future audit on the strength of one noisy sample.
+      const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
+      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(15);
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(extractPosesFromVideo).not.toHaveBeenCalled();
+      expect(source.getPoseTrack()?.metadata.fpsMeasured).toBeUndefined();
+      expect(savePoseTrackToStorage).not.toHaveBeenCalled();
+    });
+
     it('keeps the cache when measurement fails rather than discarding good data', async () => {
       const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
       vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);

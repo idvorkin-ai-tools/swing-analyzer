@@ -5,11 +5,10 @@
  * 1. processSkeletonEvent() emits analysis errors to getErrorEvents()
  *    SYNCHRONOUSLY during the call (never deferred), so the caller can
  *    close each frame with frameProcessed() right after the call returns.
- * 2. The error channel never terminates: a streaming-path failure must not
- *    kill the Subject, or every later error becomes a silent no-op and
- *    degraded-analysis detection is permanently disarmed.
+ * 2. The error channel never terminates: no failure may kill the Subject, or
+ *    every later error becomes a silent no-op and degraded-analysis detection
+ *    is permanently disarmed.
  */
-import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FormAnalyzer, FormAnalyzerResult } from '../analyzers';
 import type { Skeleton } from '../models/Skeleton';
@@ -33,7 +32,6 @@ function makeFrameAcquisition(): FrameAcquisition {
 
 const fakeTransformer = {
   initialize: async () => {},
-  transformToSkeleton: () => new Subject<SkeletonEvent>().asObservable(),
   transformToSkeletonAsync: async () =>
     ({ skeleton: null }) as unknown as SkeletonEvent,
 } as unknown as SkeletonTransformer;

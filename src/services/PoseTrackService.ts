@@ -403,7 +403,12 @@ export async function loadPoseTrackFromStorage(
     request.onsuccess = () => {
       const result = request.result;
       if (result?.poseTrack) {
-        const track = result.poseTrack as PoseTrackFile;
+        // Typed as the RUNTIME shape on purpose. Records written before
+        // stripping really do carry ImageData, so the check below is load-
+        // bearing, not dead code — typing this as PoseTrackFile would make
+        // frameImage narrow to `undefined` and invite a later "unnecessary
+        // condition" cleanup to delete the migration.
+        const track = result.poseTrack as ExtractionPoseTrack;
         if (track.frames.some((f) => f.frameImage !== undefined)) {
           // One-time migration: this record predates ImageData stripping and
           // is ~77KB/frame bigger than it should be. Rewrite it cleaned.
@@ -417,7 +422,9 @@ export async function loadPoseTrackFromStorage(
           resolve(cleaned);
           return;
         }
-        resolve(track);
+        // No images present, so this is a no-op pass-through — but route it
+        // through the sanctioned converter rather than casting.
+        resolve(stripRuntimeFields(track));
       } else {
         resolve(null);
       }

@@ -42,6 +42,13 @@ import type {
 } from './SkeletonSource';
 
 /**
+ * How far above a cached track's recorded fps a measurement must land before
+ * the track counts as under-sampled. The real defect doubles the rate (30
+ * assumed for a 60fps source), so 1.5 separates that from estimator noise.
+ */
+const UNDER_SAMPLING_RATIO = 1.5;
+
+/**
  * Skeleton source for video files with caching support
  */
 export class VideoFileSkeletonSource implements SkeletonSource {
@@ -105,19 +112,39 @@ export class VideoFileSkeletonSource implements SkeletonSource {
    * videoTime→index with it, so a corrected number against unchanged frames
    * desynchronizes every lookup. The only sound repair is re-extraction.
    *
-   * Returns true (keep the cache) whenever the fps cannot be measured: a
-   * failed measurement is no evidence the cache is wrong, and discarding
-   * good data on it would force a costly re-extract on every load.
+   * The audit is deliberately one-sided. Only a measurement MUCH HIGHER than
+   * the recorded fps is evidence of the defect; the reverse is not:
+   *
+   * - measured >> recorded (e.g. 60 vs 30): the source has frames the track
+   *   never sampled. Re-extract.
+   * - measured <= recorded (e.g. 25 vs 30): extraction seeked to
+   *   frameIndex/fps, so the frames really are 1/recorded apart — some just
+   *   repeat. Index math still holds, so re-extracting would burn minutes to
+   *   fix nothing.
+   * - measurement failed entirely: no evidence, so keep the cache.
+   *
+   * The margin matters because the estimate is noisy: it samples 12 frames
+   * from a hidden element that is playing while the main thread is busy, so
+   * dropped presentations stretch the median delta and read LOW. Treating any
+   * inequality as staleness would let one throttled sample destroy a good
+   * cache and re-persist a genuinely wrong fps as measured — cementing the
+   * exact defect this audit exists to catch.
    */
-  private async cachedTrackIsUsable(cached: PoseTrackFile): Promise<boolean> {
+  private async cachedTrackIsUsable(
+    cached: PoseTrackFile,
+    signal?: AbortSignal
+  ): Promise<boolean> {
     if (cached.metadata.fpsMeasured) {
       return true;
     }
 
     let measuredFps: number | null;
     try {
-      measuredFps = await measureVideoFpsFromFile(this.videoFile);
+      measuredFps = await measureVideoFpsFromFile(this.videoFile, signal);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
       console.warn(
         '[VideoFileSkeletonSource] Could not audit assumed fps, keeping cache:',
         error
@@ -129,14 +156,23 @@ export class VideoFileSkeletonSource implements SkeletonSource {
       return true;
     }
 
-    if (measuredFps !== cached.metadata.fps) {
+    const recordedFps = cached.metadata.fps;
+
+    if (measuredFps > recordedFps * UNDER_SAMPLING_RATIO) {
       console.log(
-        `[VideoFileSkeletonSource] Cached track assumed ${cached.metadata.fps}fps but the video is ${measuredFps}fps — re-extracting`
+        `[VideoFileSkeletonSource] Cached track sampled at ${recordedFps}fps but the video measures ${measuredFps}fps — re-extracting`
       );
       return false;
     }
 
-    // The assumption held. Record that so the measurement is paid once.
+    // Only stamp on a close agreement. A reading well below the recorded fps
+    // keeps the cache but stays unstamped, so a later, cleaner measurement can
+    // still catch a track this one was too noisy to judge.
+    const agrees = Math.abs(measuredFps - recordedFps) <= recordedFps * 0.1;
+    if (!agrees) {
+      return true;
+    }
+
     cached.metadata.fpsMeasured = true;
     try {
       await savePoseTrackToStorage(cached);
@@ -206,10 +242,17 @@ export class VideoFileSkeletonSource implements SkeletonSource {
         throw new DOMException('Aborted', 'AbortError');
       }
 
-      if (cached && !(await this.cachedTrackIsUsable(cached))) {
+      if (cached && !(await this.cachedTrackIsUsable(cached, signal))) {
         // Sampled at an assumed fps that the source video contradicts — the
         // frames themselves are too sparse, so re-extract rather than reuse.
         cached = null;
+      }
+
+      // The audit above can block for seconds; the user may have switched
+      // videos meanwhile, and publishing 'active' now would clobber the idle
+      // state stop() just set.
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
       }
 
       if (cached) {

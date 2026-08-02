@@ -548,7 +548,8 @@ export async function estimateVideoFps(
  * Used by the cache loader to audit tracks that predate fps measurement.
  */
 export async function measureVideoFpsFromFile(
-  videoFile: File
+  videoFile: File,
+  signal?: AbortSignal
 ): Promise<number | null> {
   const video = document.createElement('video');
   video.muted = true;
@@ -560,19 +561,39 @@ export async function measureVideoFpsFromFile(
   try {
     document.body.appendChild(video);
     await new Promise<void>((resolve, reject) => {
-      const TIMEOUT_MS = 30000;
+      // Shorter than extraction's 30s: this is a local blob that is only
+      // being audited, and the caller is holding up a cache hit meanwhile.
+      const TIMEOUT_MS = 10000;
+      let abortHandler: (() => void) | null = null;
+      const settle = (fn: () => void) => {
+        clearTimeout(timeoutId);
+        if (abortHandler) {
+          signal?.removeEventListener('abort', abortHandler);
+        }
+        fn();
+      };
       const timeoutId = setTimeout(() => {
-        reject(new Error('Timed out loading video metadata'));
+        settle(() => reject(new Error('Timed out loading video metadata')));
       }, TIMEOUT_MS);
-      video.onloadedmetadata = () => {
-        clearTimeout(timeoutId);
-        resolve();
-      };
+      video.onloadedmetadata = () => settle(resolve);
       video.onerror = () => {
-        clearTimeout(timeoutId);
-        reject(new Error('Failed to load video for fps measurement'));
+        settle(() =>
+          reject(new Error('Failed to load video for fps measurement'))
+        );
       };
+      if (signal?.aborted) {
+        settle(() => reject(new DOMException('Aborted', 'AbortError')));
+        return;
+      }
+      abortHandler = () => {
+        settle(() => reject(new DOMException('Aborted', 'AbortError')));
+      };
+      signal?.addEventListener('abort', abortHandler);
     });
+
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
 
     const estimate = await estimateVideoFpsDetailed(video);
     return estimate.measured ? estimate.fps : null;

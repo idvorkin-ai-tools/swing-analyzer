@@ -232,12 +232,16 @@ export class LivePoseCache {
     );
 
     return {
+      // Spread first so metadata this cache was seeded with survives —
+      // notably fpsMeasured, which the cache loader relies on: an unstamped
+      // track is re-audited (and possibly re-extracted) on every load.
+      // Enumerating fields here silently dropped anything added later.
       metadata: {
+        ...this.metadata,
         version: '1.0',
         model: this.metadata.model ?? 'blazepose',
         modelVersion: this.metadata.modelVersion ?? '1.0.0',
         sourceVideoHash: this.videoHash ?? '',
-        sourceVideoName: this.metadata.sourceVideoName,
         sourceVideoDuration: this.metadata.sourceVideoDuration ?? 0,
         extractedAt: this.metadata.extractedAt ?? new Date().toISOString(),
         frameCount: sortedFrames.length,
