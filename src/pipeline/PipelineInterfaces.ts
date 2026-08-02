@@ -1,6 +1,4 @@
-import type { Observable } from 'rxjs';
 import type { Skeleton } from '../models/Skeleton';
-import type { SwingPositionName } from '../types';
 import type { PrecomputedAngles } from '../types/posetrack';
 import type { TimestampMs, VideoTimeSeconds } from '../utils/brandedTypes';
 import type { PoseEvent } from './PoseSkeletonTransformer';
@@ -13,16 +11,6 @@ export interface FrameAcquisition {
    * Get the current frame
    */
   getCurrentFrame(): HTMLCanvasElement | HTMLVideoElement;
-
-  /**
-   * Start frame acquisition and return an Observable of frame events
-   */
-  start(): Observable<FrameEvent>;
-
-  /**
-   * Stop frame acquisition
-   */
-  stop(): void;
 }
 
 /**
@@ -53,12 +41,6 @@ export interface SkeletonTransformer {
   initialize(): Promise<void>;
 
   /**
-   * Transform a frame event into a skeleton (Observable - for streaming pipelines)
-   * @deprecated Use transformToSkeletonAsync for video-event-driven processing
-   */
-  transformToSkeleton(frameEvent: FrameEvent): Observable<SkeletonEvent>;
-
-  /**
    * Transform a frame event into a skeleton (Promise-based)
    * Use this for video-event-driven processing without RxJS subscriptions.
    */
@@ -73,59 +55,4 @@ export interface SkeletonEvent {
   poseEvent: PoseEvent;
   /** Precomputed angles from pose track (optional, for cached data) */
   precomputedAngles?: PrecomputedAngles;
-}
-
-/**
- * Form processor stage - processes skeletons to identify form positions
- * Maintains state for form analysis
- */
-export interface FormProcessor {
-  /**
-   * Process a skeleton to identify checkpoints
-   * Returns an Observable that emits checkpoint events
-   */
-  processFrame(skeletonEvent: SkeletonEvent): Observable<FormEvent>;
-
-  /**
-   * Reset the form processor state
-   */
-  reset(): void;
-}
-
-/**
- * A form event with the detected position and skeleton data
- */
-export interface FormEvent {
-  position: SwingPositionName | null;
-  skeletonEvent: SkeletonEvent;
-}
-
-/**
- * Rep processor stage - processes form events to count repetitions
- * Maintains state for repetition tracking
- */
-export interface RepProcessor {
-  /**
-   * Update rep count based on form event
-   * Returns an Observable that emits rep count updates
-   */
-  updateRepCount(formEvent: FormEvent): Observable<RepEvent>;
-
-  /**
-   * Get the current rep count
-   */
-  getRepCount(): number;
-
-  /**
-   * Reset rep counter
-   */
-  reset(): void;
-}
-
-/**
- * A rep event with the rep count and form data
- */
-export interface RepEvent {
-  repCount: number;
-  formEvent: FormEvent;
 }

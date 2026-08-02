@@ -1,8 +1,6 @@
 import type * as poseDetection from '@tensorflow-models/pose-detection';
 import '@tensorflow/tfjs-backend-webgl';
 import * as tf from '@tensorflow/tfjs-core';
-import { from, type Observable, of } from 'rxjs';
-import { catchError, map, switchMap } from 'rxjs/operators';
 import { DEFAULT_MODEL_CONFIG, type ModelConfig } from '../config/modelConfig';
 import { Skeleton } from '../models/Skeleton';
 import {
@@ -119,18 +117,6 @@ export class PoseSkeletonTransformer implements SkeletonTransformer {
   }
 
   /**
-   * Transform a frame event directly into a skeleton (Observable version)
-   * @deprecated Use transformToSkeletonAsync for video-event-driven processing
-   */
-  transformToSkeleton(frameEvent: FrameEvent): Observable<SkeletonEvent> {
-    // First detect the pose
-    return this.detectPose(frameEvent).pipe(
-      // Then transform the pose result into a skeleton
-      switchMap((poseEvent) => this.buildSkeleton(poseEvent))
-    );
-  }
-
-  /**
    * Transform a frame event directly into a skeleton (Promise version)
    * Use this for video-event-driven processing without RxJS subscriptions.
    */
@@ -185,77 +171,6 @@ export class PoseSkeletonTransformer implements SkeletonTransformer {
     const skeleton = new Skeleton(keypoints, spineAngle, hasVisibleKeypoints);
 
     return { skeleton, poseEvent };
-  }
-
-  /**
-   * Private method to detect pose from a frame event
-   */
-  private detectPose(frameEvent: FrameEvent): Observable<PoseEvent> {
-    if (!this.detector) {
-      console.warn('Pose detector not initialized');
-      return of({
-        pose: null,
-        frameEvent,
-      });
-    }
-
-    // Convert the Promise-based detection to an Observable
-    return from(this.detector.estimatePoses(frameEvent.frame)).pipe(
-      map((poses) => {
-        if (poses.length === 0) {
-          return {
-            pose: null,
-            frameEvent,
-          };
-        }
-
-        // Use the first detected pose (we're focused on single person)
-        const pose = poses[0];
-        // Use raw keypoints directly (MediaPipe 33-point format)
-        const keypoints = pose.keypoints as PoseKeypoint[];
-
-        return {
-          pose: {
-            keypoints,
-            score: pose.score,
-          },
-          frameEvent,
-        };
-      }),
-      catchError((error) => {
-        console.error('Error detecting pose:', error);
-        return of({
-          pose: null,
-          frameEvent,
-        });
-      })
-    );
-  }
-
-  /**
-   * Private method to build a skeleton from a pose event
-   */
-  private buildSkeleton(poseEvent: PoseEvent): Observable<SkeletonEvent> {
-    // If no pose was detected, return null skeleton
-    if (!poseEvent.pose) {
-      return of({
-        skeleton: null,
-        poseEvent,
-      });
-    }
-
-    // Build the skeleton from keypoints
-    const keypoints = poseEvent.pose.keypoints;
-    const spineAngle = this.calculateSpineVertical(keypoints);
-    const hasVisibleKeypoints = this.hasRequiredKeypoints(keypoints);
-
-    const skeleton = new Skeleton(keypoints, spineAngle, hasVisibleKeypoints);
-
-    // Return the skeleton event
-    return of({
-      skeleton,
-      poseEvent,
-    });
   }
 
   /**

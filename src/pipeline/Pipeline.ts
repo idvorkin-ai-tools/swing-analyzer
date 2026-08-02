@@ -1,5 +1,4 @@
-import { type Observable, Subject, type Subscription } from 'rxjs';
-import { share, switchMap, tap } from 'rxjs/operators';
+import { type Observable, Subject } from 'rxjs';
 import {
   createAnalyzerForExercise,
   type DetectedExercise,
@@ -32,12 +31,11 @@ export interface ThumbnailEvent {
 /**
  * Orchestrates the processing pipeline from frame to rep analysis.
  *
- * Supports two processing modes:
- * 1. Batch/extraction (preferred): call processSkeletonEvent() per skeleton
- *    coming from extraction or cache replay
- * 2. RxJS streaming (legacy): Call start() to begin Observable-based processing
+ * Processing is batch/extraction driven: call processSkeletonEvent() per
+ * skeleton coming from extraction or cache replay. Results are published on
+ * the Observable getters below for the UI to consume.
  *
- * Pipeline flow: Frame → Skeleton → FormAnalyzer.processFrame() → Results
+ * Pipeline flow: Skeleton → FormAnalyzer.processFrame() → Results
  *
  * The FormAnalyzer is a plugin interface - different exercises get different analyzers:
  * - KettlebellSwingFormAnalyzer: peak-based state machine for swings
@@ -49,11 +47,7 @@ export class Pipeline {
   private latestSkeleton: Skeleton | null = null;
   private repCount = 0;
 
-  // Processing state
-  private isActive = false;
-  private pipelineSubscription: Subscription | null = null;
-
-  // Output subjects (for legacy RxJS streaming mode)
+  // Output subjects
   private resultSubject = new Subject<PipelineResult>();
   private skeletonSubject = new Subject<SkeletonEvent>();
   private thumbnailSubject = new Subject<ThumbnailEvent>();
@@ -86,113 +80,7 @@ export class Pipeline {
   }
 
   /**
-   * Start the pipeline processing and return an Observable of results
-   */
-  start(): Observable<PipelineResult> {
-    if (this.isActive) {
-      return this.resultSubject.asObservable();
-    }
-
-    this.isActive = true;
-
-    // Build the RxJS pipeline
-    const frameStream = this.frameAcquisition.start();
-
-    // Pipeline: Frame → Skeleton → FormAnalyzer.processFrame()
-    this.pipelineSubscription = frameStream
-      .pipe(
-        // Stage 1: Skeleton Transformation (combined pose detection and skeleton construction)
-        switchMap((frameEvent) =>
-          this.skeletonTransformer.transformToSkeleton(frameEvent)
-        ),
-
-        // Stage 2: Process skeleton through form analyzer
-        tap((skeletonEvent) => {
-          // Emit the skeleton event to subscribers (for rendering)
-          this.skeletonSubject.next(skeletonEvent);
-
-          // Store latest skeleton
-          if (skeletonEvent.skeleton) {
-            this.latestSkeleton = skeletonEvent.skeleton;
-
-            // Process through form analyzer
-            try {
-              const result = this.formAnalyzer.processFrame(
-                skeletonEvent.skeleton,
-                skeletonEvent.poseEvent.frameEvent.timestamp,
-                skeletonEvent.poseEvent.frameEvent.videoTime,
-                skeletonEvent.poseEvent.frameEvent.frameImage
-              );
-
-              // Update rep count
-              this.repCount = result.repCount;
-
-              // Emit result
-              this.resultSubject.next({
-                skeleton: skeletonEvent.skeleton,
-                repCount: result.repCount,
-              });
-
-              // Emit thumbnail event when rep completes
-              if (result.repCompleted && result.repPositions) {
-                this.thumbnailSubject.next({
-                  repNumber: result.repCount,
-                  positions: result.repPositions,
-                });
-              }
-            } catch (error) {
-              console.error('Error in form analyzer processFrame:', error);
-              this.errorSubject.next({
-                source: 'form-analyzer',
-                error:
-                  error instanceof Error ? error : new Error(String(error)),
-                timestamp: skeletonEvent.poseEvent.frameEvent.timestamp,
-                videoTime: skeletonEvent.poseEvent.frameEvent.videoTime,
-              });
-            }
-          }
-        }),
-
-        // Share the pipeline with multiple subscribers
-        share()
-      )
-      .subscribe({
-        error: (error) => {
-          console.error('Error in pipeline:', error);
-          // Error the data subjects so subscribers know the stream failed.
-          // NOTE: this terminates them — batch processing afterwards would
-          // emit into dead subjects. Acceptable only because this legacy
-          // streaming path has no production callers (start() is unused
-          // outside tests and is slated for deletion; see
-          // docs/backlog/2026-08-01-cr-followups.md).
-          this.resultSubject.error(error);
-          this.skeletonSubject.error(error);
-          this.thumbnailSubject.error(error);
-          this.exerciseDetectionSubject.error(error);
-          // The error-REPORTING channel must never terminate: .error()
-          // ends the Subject, turning every later next() into a silent
-          // no-op — which would permanently disarm degraded-analysis
-          // detection (this subject is the tracker's only feed). Report
-          // the stream failure as one more event instead.
-          this.errorSubject.next({
-            source: 'stream',
-            error: error instanceof Error ? error : new Error(String(error)),
-            timestamp: performance.now(),
-          });
-          this.isActive = false;
-        },
-        complete: () => {
-          this.resultSubject.complete();
-          this.skeletonSubject.complete();
-          this.isActive = false;
-        },
-      });
-
-    return this.resultSubject.asObservable();
-  }
-
-  /**
-   * Get an observable for pipeline results without starting frame acquisition.
+   * Get an observable for pipeline results.
    * Use this to listen for rep count updates from batch processing (processSkeletonEvent).
    */
   getResults(): Observable<PipelineResult> {
@@ -222,27 +110,10 @@ export class Pipeline {
   }
 
   /**
-   * Stop the pipeline processing
-   */
-  stop(): void {
-    if (!this.isActive) return;
-
-    this.isActive = false;
-    this.frameAcquisition.stop();
-
-    if (this.pipelineSubscription) {
-      this.pipelineSubscription.unsubscribe();
-      this.pipelineSubscription = null;
-    }
-  }
-
-  /**
    * Dispose of all pipeline resources and complete all subjects.
    * Call this when the pipeline is no longer needed to prevent memory leaks.
    */
   dispose(): void {
-    this.stop();
-
     // Complete all subjects to release subscribers
     this.resultSubject.complete();
     this.skeletonSubject.complete();
@@ -505,7 +376,7 @@ export interface PipelineResult {
  */
 export interface PipelineError {
   /** Where in the pipeline the error occurred */
-  source: 'form-analyzer' | 'exercise-detection' | 'stream';
+  source: 'form-analyzer' | 'exercise-detection';
   /** The original error */
   error: Error;
   /** Timestamp when error occurred */

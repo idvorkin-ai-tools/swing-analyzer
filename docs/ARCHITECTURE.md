@@ -20,7 +20,7 @@ Frame → Pose Detection → Skeleton → Form Analysis → Rep Count → UI
                               ▲
 ┌─────────────────────────────────────────────────────────────┐
 │                       HOOKS LAYER                           │
-│  State management: useSwingAnalyzerV2, useVideoControls    │
+│  State management: useSwingAnalyzerV2, useInputSession      │
 └─────────────────────────────────────────────────────────────┘
                               ▲
 ┌─────────────────────────────────────────────────────────────┐
@@ -91,7 +91,6 @@ State management and side effect coordination.
 | Hook                       | Purpose                                    |
 | -------------------------- | ------------------------------------------ |
 | `useSwingAnalyzerV2.tsx`   | Main coordinator - connects pipeline to UI |
-| `useVideoControls.ts`      | Video playback state                       |
 | `useInputSession.ts`       | Input mode state machine                   |
 | `useKeyboardNavigation.ts` | Keyboard shortcuts                         |
 

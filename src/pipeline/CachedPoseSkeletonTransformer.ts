@@ -13,7 +13,6 @@
  * is still used for form/rep processing during extraction batch mode.
  */
 
-import { type Observable, of } from 'rxjs';
 import { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
 import type { PoseTrackFile, PoseTrackFrame } from '../types/posetrack';
@@ -61,14 +60,6 @@ export class CachedPoseSkeletonTransformer implements SkeletonTransformer {
    */
   async initialize(): Promise<void> {
     console.log('CachedPoseSkeletonTransformer: Ready (using cached poses)');
-  }
-
-  /**
-   * Transform a frame event into a skeleton using cached pose data (Observable version).
-   * @deprecated Use transformToSkeletonAsync for video-event-driven processing
-   */
-  transformToSkeleton(frameEvent: FrameEvent): Observable<SkeletonEvent> {
-    return of(this.transformToSkeletonSync(frameEvent));
   }
 
   /**

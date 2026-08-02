@@ -916,11 +916,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
           }s:`,
           pipelineError.error
         );
-        // 'stream' failures arrive outside any frame window — recording
-        // one would be charged to whichever frame happens to run next.
-        if (pipelineError.source !== 'stream') {
-          consecutiveErrorTrackerRef.current?.recordError();
-        }
+        consecutiveErrorTrackerRef.current?.recordError();
       },
       error: (error) => {
         console.error('Error in pipeline error subscription:', error);

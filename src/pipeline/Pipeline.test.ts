@@ -9,7 +9,7 @@
  *    kill the Subject, or every later error becomes a silent no-op and
  *    degraded-analysis detection is permanently disarmed.
  */
-import { Subject, throwError } from 'rxjs';
+import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FormAnalyzer, FormAnalyzerResult } from '../analyzers';
 import type { Skeleton } from '../models/Skeleton';
@@ -21,20 +21,14 @@ import {
 import { Pipeline, type PipelineError } from './Pipeline';
 import type {
   FrameAcquisition,
-  FrameEvent,
   SkeletonEvent,
   SkeletonTransformer,
 } from './PipelineInterfaces';
 
-function makeFrameAcquisition(
-  overrides: Partial<FrameAcquisition> = {}
-): FrameAcquisition {
+function makeFrameAcquisition(): FrameAcquisition {
   return {
     getCurrentFrame: () => ({}) as HTMLCanvasElement,
-    start: () => new Subject<FrameEvent>().asObservable(),
-    stop: vi.fn(),
-    ...overrides,
-  } as FrameAcquisition;
+  };
 }
 
 const fakeTransformer = {
@@ -96,9 +90,9 @@ describe('Pipeline error contract', () => {
     errors = [];
   });
 
-  function build(script: Array<number | 'throw'>, acq?: FrameAcquisition) {
+  function build(script: Array<number | 'throw'>) {
     const pipeline = new Pipeline(
-      acq ?? makeFrameAcquisition(),
+      makeFrameAcquisition(),
       fakeTransformer,
       makeAnalyzer(script)
     );
@@ -132,25 +126,20 @@ describe('Pipeline error contract', () => {
     expect(pipeline.processSkeletonEvent(makeSkeletonEvent())).toBe(2);
   });
 
-  it('keeps delivering error events after a streaming-path failure', () => {
-    const acq = makeFrameAcquisition({
-      start: () => throwError(() => new Error('stream died')),
-    });
-    const pipeline = build(['throw'], acq);
+  it('keeps the error channel open across many failing frames', () => {
+    const pipeline = build(['throw']);
     const channelDied = vi.fn();
     pipeline.getErrorEvents().subscribe({ error: channelDied });
 
-    pipeline.start(); // stream errors immediately
+    for (let i = 0; i < 3; i++) {
+      pipeline.processSkeletonEvent(makeSkeletonEvent());
+    }
 
-    // The stream failure itself must arrive as an EVENT, not a terminal
-    // .error() on the channel.
+    // .error() on the reporting Subject would end it, turning every later
+    // next() into a silent no-op and permanently disarming degraded-analysis
+    // detection. Failures must arrive as events instead.
     expect(channelDied).not.toHaveBeenCalled();
-    expect(errors.some((e) => e.source === 'stream')).toBe(true);
-
-    // And later analysis errors must still be delivered.
-    const before = errors.length;
-    pipeline.processSkeletonEvent(makeSkeletonEvent());
-    expect(errors.length).toBe(before + 1);
-    expect(errors[errors.length - 1].source).toBe('form-analyzer');
+    expect(errors).toHaveLength(3);
+    expect(errors.every((e) => e.source === 'form-analyzer')).toBe(true);
   });
 });
