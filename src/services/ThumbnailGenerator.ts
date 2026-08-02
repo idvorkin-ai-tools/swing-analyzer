@@ -51,6 +51,8 @@ interface ThumbnailRequest {
   repNumber: number;
   positions: RepPosition[];
   callback: (repNumber: number, positions: RepPosition[]) => void;
+  /** Video generation this request was enqueued against — see `generation`. */
+  generation: number;
 }
 
 /**
@@ -78,6 +80,13 @@ export class ThumbnailQueue {
 
   // Request queue
   private queue: ThumbnailRequest[] = [];
+  /**
+   * Bumped every time the video source changes. Requests carry the generation
+   * they were made against; anything from an older one is dropped rather than
+   * rendered, because the pixels would come from the CURRENT video while the
+   * rep numbers and checkpoints belong to the previous one.
+   */
+  private generation = 0;
   private flushTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   // Canvases for thumbnail capture (reused)
@@ -161,6 +170,12 @@ export class ThumbnailQueue {
   setVideoSource(source: File | string): void {
     this.isVideoReady = false;
 
+    // Everything queued belongs to the outgoing video. Drop it: rendering it
+    // against the new source would stamp the previous video's rep numbers and
+    // checkpoints onto the new video's gallery with the new video's pixels.
+    this.generation++;
+    this.queue.length = 0;
+
     if (source instanceof File) {
       // Create blob URL from file
       if (this.videoSource?.startsWith('blob:')) {
@@ -197,7 +212,12 @@ export class ThumbnailQueue {
       return;
     }
 
-    this.queue.push({ repNumber, positions, callback });
+    this.queue.push({
+      repNumber,
+      positions,
+      callback,
+      generation: this.generation,
+    });
     this.scheduleFlush();
   }
 
@@ -237,6 +257,7 @@ export class ThumbnailQueue {
     console.log(`[ThumbnailQueue] Processing ${this.queue.length} requests`);
 
     // Take all current requests
+    const batchGeneration = this.generation;
     const requests = this.queue.splice(0, this.queue.length);
 
     // Build flat list of all work items with video times
@@ -265,6 +286,12 @@ export class ThumbnailQueue {
     // Process each work item
     let lastSeekTime = -Infinity;
     for (const item of workItems) {
+      // Each seek awaits, so the source can be swapped mid-batch. Stop rather
+      // than keep capturing frames from a video these positions never came from.
+      if (this.generation !== batchGeneration) {
+        console.log('[ThumbnailQueue] Video changed mid-batch, discarding');
+        break;
+      }
       try {
         // Only seek if position is far enough from last seek
         if (
@@ -288,8 +315,11 @@ export class ThumbnailQueue {
       }
     }
 
-    // Call callbacks with updated positions
+    // Call callbacks with updated positions. A stale request's callback writes
+    // straight into gallery state (useExerciseAnalyzer), so a superseded batch
+    // must stay silent rather than repopulate the gallery it was reset from.
     for (const request of requests) {
+      if (request.generation !== this.generation) continue;
       request.callback(request.repNumber, request.positions);
     }
 
