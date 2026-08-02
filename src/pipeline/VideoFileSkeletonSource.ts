@@ -49,6 +49,15 @@ import type {
 const UNDER_SAMPLING_RATIO = 1.5;
 
 /**
+ * Cached frames replayed per macrotask. Each emission synchronously drives the
+ * form analyzer and React state, so a 30-minute video (~54k frames) in one
+ * task locks the tab. Sized so ordinary clips still replay in a single pass —
+ * which also keeps the burst observable after one timer tick, as the tests
+ * that await a single flush expect.
+ */
+const CACHED_REPLAY_CHUNK_SIZE = 500;
+
+/**
  * Skeleton source for video files with caching support
  */
 export class VideoFileSkeletonSource implements SkeletonSource {
@@ -300,30 +309,55 @@ export class VideoFileSkeletonSource implements SkeletonSource {
             cached.frames.length,
             'cached skeleton events'
           );
+          const frames = cached.frames;
           let emitCount = 0;
-          for (const frame of cached.frames) {
-            const skeletonEvent = buildSkeletonEventFromFrame(frame);
-            this.skeletonSubject.next(skeletonEvent);
-            emitCount++;
-          }
-          const processingTime = performance.now() - startTime;
-          console.log(
-            '[VideoFileSkeletonSource] Done emitting',
-            emitCount,
-            'cached skeleton events in',
-            processingTime.toFixed(0),
-            'ms'
-          );
 
-          // Emit completion event after all skeletons processed
-          // This is a signal that batch processing is done
-          this.stateSubject.next({
-            type: 'active',
-            batch: {
-              framesProcessed: emitCount,
-              processingTimeMs: processingTime,
-            },
-          });
+          // Emit in chunks, yielding between them. Every emission runs the
+          // analyzer and React updates synchronously, so replaying a long
+          // video in one task froze the tab — on the path that exists to be
+          // the FAST one. The chunk is large enough that ordinary videos
+          // still finish in the first pass.
+          const emitChunk = () => {
+            if (this.stopped || generation !== this.generation) {
+              return;
+            }
+
+            const chunkEnd = Math.min(
+              emitCount + CACHED_REPLAY_CHUNK_SIZE,
+              frames.length
+            );
+            for (; emitCount < chunkEnd; emitCount++) {
+              this.skeletonSubject.next(
+                buildSkeletonEventFromFrame(frames[emitCount])
+              );
+            }
+
+            if (emitCount < frames.length) {
+              setTimeout(emitChunk, 0);
+              return;
+            }
+
+            const processingTime = performance.now() - startTime;
+            console.log(
+              '[VideoFileSkeletonSource] Done emitting',
+              emitCount,
+              'cached skeleton events in',
+              processingTime.toFixed(0),
+              'ms'
+            );
+
+            // Emit completion event after all skeletons processed
+            // This is a signal that batch processing is done
+            this.stateSubject.next({
+              type: 'active',
+              batch: {
+                framesProcessed: emitCount,
+                processingTimeMs: processingTime,
+              },
+            });
+          };
+
+          emitChunk();
         }, 0);
 
         return;

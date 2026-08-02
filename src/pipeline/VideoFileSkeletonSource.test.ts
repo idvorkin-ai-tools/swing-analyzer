@@ -222,6 +222,55 @@ describe('VideoFileSkeletonSource', () => {
     expect(source.state.type).toBe('idle');
   });
 
+  describe('cached replay yields between chunks', () => {
+    // Each emission synchronously drives the analyzer and React state, so a
+    // long track replayed in one task freezes the tab. 500 frames per chunk.
+    const CHUNK = 500;
+
+    it('does not emit the whole track in a single task', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(600));
+      const source = makeSource();
+      const skeletons: unknown[] = [];
+      source.skeletons$.subscribe((e) => skeletons.push(e));
+
+      await source.start();
+      await flushTimers();
+      expect(skeletons).toHaveLength(CHUNK);
+
+      await flushTimers();
+      expect(skeletons).toHaveLength(600);
+    });
+
+    it('signals batch completion only after the last chunk', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(600));
+      const source = makeSource();
+      const states: SkeletonSourceState[] = [];
+      source.state$.subscribe((s) => states.push(s));
+
+      await source.start();
+      await flushTimers();
+      expect(states.some((s) => 'batch' in s && s.batch)).toBe(false);
+
+      await flushTimers();
+      const last = states[states.length - 1];
+      expect(last).toMatchObject({ batch: { framesProcessed: 600 } });
+    });
+
+    it('stops mid-replay when the source is stopped between chunks', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(600));
+      const source = makeSource();
+      const skeletons: unknown[] = [];
+      source.skeletons$.subscribe((e) => skeletons.push(e));
+
+      await source.start();
+      await flushTimers(); // first chunk lands
+      source.stop();
+      await flushTimers(); // second chunk must not run
+
+      expect(skeletons).toHaveLength(CHUNK);
+    });
+  });
+
   /**
    * Tracks extracted before fps measurement landed carry an ASSUMED fps of 30.
    * That number is not just a label: extraction samples at 1/fps, so the track's
