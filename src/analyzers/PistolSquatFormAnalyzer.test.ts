@@ -255,6 +255,96 @@ describe('PistolSquatFormAnalyzer', () => {
     });
   });
 
+  describe('slow descents keep a real 50% checkpoint', () => {
+    /**
+     * The descending checkpoint is chosen retroactively once bottom is
+     * confirmed, by searching frame history for the frame nearest half the ear
+     * travel. The window therefore has to outlast the whole descent. At the
+     * old 120 frames (~4s at 30fps) a controlled ~10s descent had already
+     * evicted the true 50% frame, so the search returned the oldest surviving
+     * frame — near the bottom — and labelled it "descending".
+     */
+    const STANDING_EAR_Y = 200;
+    const BOTTOM_EAR_Y = 500;
+    const DESCENT_FRAMES = 300; // ~10s at 30fps
+    const FRAME_MS = 33;
+
+    function runSlowDescent(a: PistolSquatFormAnalyzer) {
+      let t = 0;
+      for (let i = 0; i < 3; i++) {
+        a.processFrame(
+          createMockSkeleton({
+            ...PHASE_ANGLES.standing,
+            earY: STANDING_EAR_Y,
+          }),
+          asTimestampMs(t),
+          (t / 1000) as never
+        );
+        t += FRAME_MS;
+      }
+
+      // Linear descent from standing to bottom.
+      for (let i = 1; i <= DESCENT_FRAMES; i++) {
+        const progress = i / DESCENT_FRAMES;
+        const earY =
+          STANDING_EAR_Y + (BOTTOM_EAR_Y - STANDING_EAR_Y) * progress;
+        const base =
+          progress < 0.5
+            ? PHASE_ANGLES.descending
+            : PHASE_ANGLES.descendingDeep;
+        a.processFrame(
+          createMockSkeleton({ ...base, earY }),
+          asTimestampMs(t),
+          (t / 1000) as never
+        );
+        t += FRAME_MS;
+      }
+
+      // Rising frames confirm the trough, then ascend back to standing so the
+      // rep completes and reports its positions.
+      const tail = [
+        PHASE_ANGLES.bottomRising1,
+        PHASE_ANGLES.bottomRising2,
+        PHASE_ANGLES.bottomRising3,
+        PHASE_ANGLES.ascending,
+        PHASE_ANGLES.ascending,
+        PHASE_ANGLES.standing,
+        PHASE_ANGLES.standing,
+      ];
+      let completion: ReturnType<typeof a.processFrame> | undefined;
+      for (const angles of tail) {
+        const result = a.processFrame(
+          createMockSkeleton(angles),
+          asTimestampMs(t),
+          (t / 1000) as never
+        );
+        if (result.repCompleted) completion = result;
+        t += FRAME_MS;
+      }
+      return completion;
+    }
+
+    it('picks a descending checkpoint near half the ear travel, not near the bottom', () => {
+      const completion = runSlowDescent(analyzer);
+
+      const descending = completion?.repPositions?.find(
+        (p) => p.name === 'descending'
+      );
+      expect(descending).toBeDefined();
+
+      // Ear travel is 200->500, so 50% is earY 350: frame 150 of 300.
+      const trueHalfwaySeconds = (3 * FRAME_MS + 150 * FRAME_MS) / 1000;
+      const bottomSeconds = (3 * FRAME_MS + 300 * FRAME_MS) / 1000;
+
+      expect(descending?.videoTime).toBeCloseTo(trueHalfwaySeconds, 0);
+      // Guard the actual failure mode: falling back to the oldest surviving
+      // frame put this checkpoint down near the bottom.
+      expect(descending?.videoTime).toBeLessThan(
+        (trueHalfwaySeconds + bottomSeconds) / 2
+      );
+    });
+  });
+
   describe('rep counting', () => {
     it('counts multiple reps correctly', () => {
       // Helper to run through one full rep with trough detection

@@ -168,9 +168,23 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
   private readonly framesNeededToConfirmBottom = 3;
   private readonly earYThresholdForAscent = 5; // Min ear Y decrease to count as ascending
 
-  // Frame history for capturing 50% checkpoints retroactively
+  // Frame history for capturing 50% checkpoints retroactively.
+  //
+  // The window has to outlast a whole descent, because the 50% checkpoint is
+  // chosen retroactively once bottom is confirmed. At the old 120 frames (~4s
+  // at 30fps) a controlled 8-second descent had already evicted the true 50%
+  // frame, so the search picked the oldest SURVIVING frame — typically near
+  // the bottom — and labelled it "descending".
   private frameHistory: EarFrameRecord[] = [];
-  private readonly maxFrameHistory = 120; // ~4 seconds at 30fps
+  private readonly maxFrameHistory = 600; // ~20s at 30fps, ~10s at 60fps
+  /**
+   * Only the most recent slice keeps its thumbnail. Records are cheap apart
+   * from frameImage (120x160 RGBA ≈ 77KB each), so retaining pixels for the
+   * whole window would trade a checkpoint bug for tens of MB. Checkpoints
+   * chosen from an older frame come back without an image, which is exactly
+   * the case ThumbnailQueue regenerates by seeking.
+   */
+  private readonly maxFramesWithImage = 120;
 
   constructor(thresholds: Partial<PistolSquatThresholds> = {}) {
     super('standing');
@@ -342,6 +356,13 @@ export class PistolSquatFormAnalyzer extends FormAnalyzerBase<
     this.frameHistory.push(frameRecord);
     if (this.frameHistory.length > this.maxFrameHistory) {
       this.frameHistory.shift();
+    }
+
+    // Release pixels once a record falls out of the recent window; the record
+    // itself stays searchable so long descents keep a real 50% candidate.
+    const releaseIndex = this.frameHistory.length - this.maxFramesWithImage - 1;
+    if (releaseIndex >= 0) {
+      this.frameHistory[releaseIndex].frameImage = undefined;
     }
 
     // Track metrics for quality scoring
