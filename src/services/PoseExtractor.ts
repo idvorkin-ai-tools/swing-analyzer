@@ -243,7 +243,8 @@ export async function extractPosesFromVideo(
 
     // Get video properties
     const duration = video.duration;
-    const fps = await estimateVideoFps(video);
+    const { fps, measured: fpsMeasured } =
+      await estimateVideoFpsDetailed(video);
     const totalFrames = Math.ceil(duration * fps);
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
@@ -405,6 +406,7 @@ export async function extractPosesFromVideo(
       sourceVideoDuration: duration,
       frameCount: frames.length,
       fps,
+      fpsMeasured,
       videoWidth,
       videoHeight,
       cropRegion,
@@ -534,6 +536,75 @@ function seekToTime(video: HTMLVideoElement, time: number): Promise<void> {
 export async function estimateVideoFps(
   video: HTMLVideoElement
 ): Promise<number> {
+  return (await estimateVideoFpsDetailed(video)).fps;
+}
+
+/**
+ * Measure a video file's fps without extracting poses, using a throwaway
+ * hidden element. Returns null when the fps could not actually be measured
+ * (no rVFC, blocked playback, unusable samples) so callers can tell "this
+ * really is 30fps" apart from "we could not tell".
+ *
+ * Used by the cache loader to audit tracks that predate fps measurement.
+ */
+export async function measureVideoFpsFromFile(
+  videoFile: File
+): Promise<number | null> {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.style.display = 'none';
+  const videoUrl = URL.createObjectURL(videoFile);
+  video.src = videoUrl;
+
+  try {
+    document.body.appendChild(video);
+    await new Promise<void>((resolve, reject) => {
+      const TIMEOUT_MS = 30000;
+      const timeoutId = setTimeout(() => {
+        reject(new Error('Timed out loading video metadata'));
+      }, TIMEOUT_MS);
+      video.onloadedmetadata = () => {
+        clearTimeout(timeoutId);
+        resolve();
+      };
+      video.onerror = () => {
+        clearTimeout(timeoutId);
+        reject(new Error('Failed to load video for fps measurement'));
+      };
+    });
+
+    const estimate = await estimateVideoFpsDetailed(video);
+    return estimate.measured ? estimate.fps : null;
+  } finally {
+    video.onloadedmetadata = null;
+    video.onerror = null;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    video.remove();
+    URL.revokeObjectURL(videoUrl);
+  }
+}
+
+/**
+ * Result of an fps estimation. `measured` is false when every sampling path
+ * failed and `fps` is the 30fps fallback — callers that persist the number
+ * must not record it as measured, or the assumption gets cemented as fact.
+ * @internal Exported for testing
+ */
+export interface FpsEstimate {
+  fps: number;
+  measured: boolean;
+}
+
+/**
+ * estimateVideoFps, but reporting whether the value was actually measured.
+ * @internal Exported for testing
+ */
+export async function estimateVideoFpsDetailed(
+  video: HTMLVideoElement
+): Promise<FpsEstimate> {
   const FALLBACK_FPS = 30;
   const SAMPLE_FRAMES = 12;
   const TIMEOUT_MS = 2000;
@@ -543,12 +614,12 @@ export async function estimateVideoFps(
   const MIN_FPS = 5;
   const MAX_FPS = 120;
 
-  const fallback = (reason: string, detail?: unknown): number => {
+  const fallback = (reason: string, detail?: unknown): FpsEstimate => {
     console.warn(
       `[estimateVideoFps] falling back to ${FALLBACK_FPS} fps: ${reason}`,
       detail ?? ''
     );
-    return FALLBACK_FPS;
+    return { fps: FALLBACK_FPS, measured: false };
   };
 
   type VideoWithRvfc = HTMLVideoElement & {
@@ -568,9 +639,9 @@ export async function estimateVideoFps(
     return fallback('playback could not start', playError);
   }
 
-  const fps = await new Promise<number>((resolve) => {
+  const estimate = await new Promise<FpsEstimate>((resolve) => {
     let done = false;
-    const finish = (value: number) => {
+    const finish = (value: FpsEstimate) => {
       done = true;
       resolve(value);
     };
@@ -597,12 +668,12 @@ export async function estimateVideoFps(
           return;
         }
         const median = deltas[Math.floor(deltas.length / 2)];
-        const measured = Math.round(1 / median);
-        if (measured < MIN_FPS || measured > MAX_FPS) {
-          finish(fallback(`measured ${measured} fps is outside sane range`));
+        const measuredFps = Math.round(1 / median);
+        if (measuredFps < MIN_FPS || measuredFps > MAX_FPS) {
+          finish(fallback(`measured ${measuredFps} fps is outside sane range`));
           return;
         }
-        finish(measured);
+        finish({ fps: measuredFps, measured: true });
         return;
       }
       rvfcVideo.requestVideoFrameCallback?.(onFrame);
@@ -613,7 +684,7 @@ export async function estimateVideoFps(
 
   video.pause();
   video.currentTime = 0;
-  return fps;
+  return estimate;
 }
 
 /**

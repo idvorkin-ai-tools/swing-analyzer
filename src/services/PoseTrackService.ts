@@ -613,6 +613,7 @@ export function createPoseTrackMetadata(params: {
   sourceVideoDuration: number;
   frameCount: number;
   fps: number;
+  fpsMeasured?: boolean;
   videoWidth: number;
   videoHeight: number;
   cropRegion?: CropRegion;
@@ -630,6 +631,7 @@ export function createPoseTrackMetadata(params: {
     extractedAt: new Date().toISOString(),
     frameCount: params.frameCount,
     fps: params.fps,
+    fpsMeasured: params.fpsMeasured,
     videoWidth: params.videoWidth,
     videoHeight: params.videoHeight,
     cropRegion: params.cropRegion,

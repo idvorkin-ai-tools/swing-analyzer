@@ -10,6 +10,7 @@ import { VideoFileSkeletonSource } from './VideoFileSkeletonSource';
 
 vi.mock('../services/PoseExtractor', () => ({
   extractPosesFromVideo: vi.fn(),
+  measureVideoFpsFromFile: vi.fn(),
 }));
 vi.mock('../services/PoseTrackService', () => ({
   loadPoseTrackFromStorage: vi.fn(),
@@ -29,7 +30,10 @@ vi.mock('./PipelineFactory', () => ({
   }),
 }));
 
-import { extractPosesFromVideo } from '../services/PoseExtractor';
+import {
+  extractPosesFromVideo,
+  measureVideoFpsFromFile,
+} from '../services/PoseExtractor';
 import {
   loadPoseTrackFromStorage,
   savePoseTrackToStorage,
@@ -37,7 +41,10 @@ import {
 import { recordPoseTrackPersistFailure } from '../services/SessionRecorder';
 import { computeQuickVideoHash } from '../utils/videoHash';
 
-function makeTrack(frameCount = 3): PoseTrackFile {
+function makeTrack(
+  frameCount = 3,
+  metadataOverrides: Record<string, unknown> = {}
+): PoseTrackFile {
   return {
     metadata: {
       version: '1.0',
@@ -48,8 +55,10 @@ function makeTrack(frameCount = 3): PoseTrackFile {
       extractedAt: new Date().toISOString(),
       frameCount,
       fps: 30,
+      fpsMeasured: true,
       videoWidth: 640,
       videoHeight: 480,
+      ...metadataOverrides,
     },
     frames: Array.from({ length: frameCount }, (_, i) => ({
       frameIndex: i,
@@ -211,5 +220,73 @@ describe('VideoFileSkeletonSource', () => {
 
     expect(skeletons).toHaveLength(0);
     expect(source.state.type).toBe('idle');
+  });
+
+  /**
+   * Tracks extracted before fps measurement landed carry an ASSUMED fps of 30.
+   * That number is not just a label: extraction samples at 1/fps, so the track's
+   * frames really are 30fps-spaced and every videoTime→index lookup depends on
+   * it. A 60fps source therefore cached at half resolution, permanently — cache
+   * hits skip measurement, so re-opening the same file never self-corrects while
+   * a fresh extraction of it would. The fix must re-extract, NOT rewrite fps on
+   * the existing frames (that would desynchronize the index math).
+   */
+  describe('legacy tracks with an assumed (unmeasured) fps', () => {
+    it('re-extracts when the source video turns out to be denser than the cached track', async () => {
+      const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
+      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(60);
+      vi.mocked(extractPosesFromVideo).mockResolvedValue({
+        poseTrack: makeTrack(6, { fps: 60 }),
+      } as Awaited<ReturnType<typeof extractPosesFromVideo>>);
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(extractPosesFromVideo).toHaveBeenCalled();
+      expect(source.getPoseTrack()?.metadata.fps).toBe(60);
+    });
+
+    it('keeps the cache and stamps it measured when the assumed fps was right', async () => {
+      const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
+      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(30);
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(extractPosesFromVideo).not.toHaveBeenCalled();
+      expect(source.getPoseTrack()?.metadata.fpsMeasured).toBe(true);
+      // Persisted so the measurement cost is paid once, not on every load.
+      expect(savePoseTrackToStorage).toHaveBeenCalled();
+    });
+
+    it('does not measure at all when the track already records a measured fps', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(3));
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(measureVideoFpsFromFile).not.toHaveBeenCalled();
+      expect(extractPosesFromVideo).not.toHaveBeenCalled();
+    });
+
+    it('keeps the cache when measurement fails rather than discarding good data', async () => {
+      const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
+      vi.mocked(measureVideoFpsFromFile).mockRejectedValue(
+        new Error('no rvfc support')
+      );
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(extractPosesFromVideo).not.toHaveBeenCalled();
+      expect(source.state.type).toBe('active');
+    });
   });
 });

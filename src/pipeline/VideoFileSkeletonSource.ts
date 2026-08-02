@@ -12,7 +12,10 @@
  */
 
 import { BehaviorSubject, type Observable, Subject } from 'rxjs';
-import { extractPosesFromVideo } from '../services/PoseExtractor';
+import {
+  extractPosesFromVideo,
+  measureVideoFpsFromFile,
+} from '../services/PoseExtractor';
 import {
   loadPoseTrackFromStorage,
   savePoseTrackToStorage,
@@ -89,6 +92,64 @@ export class VideoFileSkeletonSource implements SkeletonSource {
   }
 
   /**
+   * Decide whether a cached track may be reused.
+   *
+   * Tracks written before fps measurement existed assumed 30fps, and that
+   * assumption set the sampling interval (extraction steps by 1/fps), so a
+   * 60fps source was cached at half resolution. Because cache hits skip
+   * measurement, the under-sampled track would otherwise be reused forever
+   * while a fresh extraction of the same file produced twice the frames.
+   *
+   * Rewriting `fps` on the existing frames is NOT a fix — playback maps
+   * videoTime→index with it, so a corrected number against unchanged frames
+   * desynchronizes every lookup. The only sound repair is re-extraction.
+   *
+   * Returns true (keep the cache) whenever the fps cannot be measured: a
+   * failed measurement is no evidence the cache is wrong, and discarding
+   * good data on it would force a costly re-extract on every load.
+   */
+  private async cachedTrackIsUsable(cached: PoseTrackFile): Promise<boolean> {
+    if (cached.metadata.fpsMeasured) {
+      return true;
+    }
+
+    let measuredFps: number | null;
+    try {
+      measuredFps = await measureVideoFpsFromFile(this.videoFile);
+    } catch (error) {
+      console.warn(
+        '[VideoFileSkeletonSource] Could not audit assumed fps, keeping cache:',
+        error
+      );
+      return true;
+    }
+
+    if (measuredFps === null) {
+      return true;
+    }
+
+    if (measuredFps !== cached.metadata.fps) {
+      console.log(
+        `[VideoFileSkeletonSource] Cached track assumed ${cached.metadata.fps}fps but the video is ${measuredFps}fps — re-extracting`
+      );
+      return false;
+    }
+
+    // The assumption held. Record that so the measurement is paid once.
+    cached.metadata.fpsMeasured = true;
+    try {
+      await savePoseTrackToStorage(cached);
+    } catch (error) {
+      // Non-fatal: we just remeasure next load.
+      console.warn(
+        '[VideoFileSkeletonSource] Could not persist verified fps:',
+        error
+      );
+    }
+    return true;
+  }
+
+  /**
    * Get the live cache (for pipeline integration during extraction)
    */
   getLiveCache(): LivePoseCache | null {
@@ -137,11 +198,17 @@ export class VideoFileSkeletonSource implements SkeletonSource {
 
       // Check cache first
       this.stateSubject.next({ type: 'checking-cache' });
-      const cached = await loadPoseTrackFromStorage(this.videoHash);
+      let cached = await loadPoseTrackFromStorage(this.videoHash);
 
       // Check if aborted after cache lookup
       if (signal?.aborted) {
         throw new DOMException('Aborted', 'AbortError');
+      }
+
+      if (cached && !(await this.cachedTrackIsUsable(cached))) {
+        // Sampled at an assumed fps that the source video contradicts — the
+        // frames themselves are too sparse, so re-extract rather than reuse.
+        cached = null;
       }
 
       if (cached) {

@@ -66,8 +66,21 @@ export interface PoseTrackMetadata {
   /** Total number of frames in the pose track */
   frameCount: number;
 
-  /** Frames per second of the source video */
+  /**
+   * Frames per second of the source video, which is ALSO the spacing of the
+   * frames in this track — extraction samples at 1/fps, and playback maps
+   * videoTime→frame index with it. The two must stay consistent: correcting
+   * this value on an existing track desynchronizes every index lookup.
+   */
   fps: number;
+
+  /**
+   * True when `fps` came from measuring the source video. Tracks extracted
+   * before measurement existed assumed 30, so they sampled a 60fps source at
+   * half resolution. Absent/false means "assumed" — the loader remeasures and
+   * re-extracts if the assumption was wrong. Always true on new extractions.
+   */
+  fpsMeasured?: boolean;
 
   /** Width of the source video in pixels */
   videoWidth: number;

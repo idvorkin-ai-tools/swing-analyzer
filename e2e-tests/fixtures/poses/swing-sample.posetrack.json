@@ -11,6 +11,7 @@
     "extractedAt": "2025-12-07T21:55:01.266Z",
     "frameCount": 594,
     "fps": 30,
+    "fpsMeasured": true,
     "videoWidth": 1920,
     "videoHeight": 1080,
     "cropRegion": {
