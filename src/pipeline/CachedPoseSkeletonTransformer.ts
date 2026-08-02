@@ -15,7 +15,7 @@
 
 import { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
-import type { PoseTrackFile, PoseTrackFrame } from '../types/posetrack';
+import type { PoseFrameData, PoseTrackFile } from '../types/posetrack';
 import { LivePoseCache } from './LivePoseCache';
 import type {
   FrameEvent,
@@ -107,7 +107,7 @@ export class CachedPoseSkeletonTransformer implements SkeletonTransformer {
    * Build a SkeletonEvent from a cached frame
    */
   private buildSkeletonEvent(
-    frame: PoseTrackFrame,
+    frame: PoseFrameData,
     frameEvent: FrameEvent
   ): SkeletonEvent {
     const skeleton = this.buildSkeleton(frame);
@@ -120,7 +120,7 @@ export class CachedPoseSkeletonTransformer implements SkeletonTransformer {
   /**
    * Build a Skeleton from cached frame data
    */
-  private buildSkeleton(frame: PoseTrackFrame): Skeleton | null {
+  private buildSkeleton(frame: PoseFrameData): Skeleton | null {
     if (!frame.keypoints || frame.keypoints.length === 0) {
       return null;
     }
@@ -188,7 +188,7 @@ export class CachedPoseSkeletonTransformer implements SkeletonTransformer {
    * Create a PoseEvent from cached frame data
    */
   private createPoseEvent(
-    frame: PoseTrackFrame | null,
+    frame: PoseFrameData | null,
     frameEvent: FrameEvent
   ): PoseEvent {
     if (!frame) {

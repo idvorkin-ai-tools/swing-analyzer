@@ -13,8 +13,9 @@
 import { firstValueFrom, Subject } from 'rxjs';
 import { filter, first, timeout } from 'rxjs/operators';
 import type {
+  ExtractionFrame,
+  ExtractionPoseTrack,
   PoseTrackFile,
-  PoseTrackFrame,
   PoseTrackMetadata,
 } from '../types/posetrack';
 import { isMediaPipeFormat, MEDIAPIPE_KEYPOINT_COUNT } from './KeypointAdapter';
@@ -39,7 +40,7 @@ export interface WaitForFrameOptions {
  * A live, streaming cache for pose frames
  */
 export class LivePoseCache {
-  private frames: Map<number, PoseTrackFrame> = new Map();
+  private frames: Map<number, ExtractionFrame> = new Map();
   private sortedVideoTimes: number[] = [];
   private metadata: Partial<PoseTrackMetadata> = {};
   private frameAdded$ = new Subject<FrameCachedEvent>();
@@ -53,7 +54,7 @@ export class LivePoseCache {
   /**
    * Add a frame to the cache (called by extraction)
    */
-  addFrame(frame: PoseTrackFrame): void {
+  addFrame(frame: ExtractionFrame): void {
     // Round video time for consistent lookup
     const roundedTime = Math.round(frame.videoTime * 1000) / 1000;
 
@@ -98,7 +99,7 @@ export class LivePoseCache {
    * @param videoTime - The video time to look up
    * @param tolerance - Optional max time difference in seconds (default: unlimited)
    */
-  getFrame(videoTime: number, tolerance?: number): PoseTrackFrame | null {
+  getFrame(videoTime: number, tolerance?: number): ExtractionFrame | null {
     const roundedTime = Math.round(videoTime * 1000) / 1000;
 
     // Try exact match first
@@ -130,7 +131,7 @@ export class LivePoseCache {
   async waitForFrame(
     videoTime: number,
     options: WaitForFrameOptions = {}
-  ): Promise<PoseTrackFrame> {
+  ): Promise<ExtractionFrame> {
     const { timeoutMs = 5000 } = options;
     const roundedTime = Math.round(videoTime * 1000) / 1000;
 
@@ -216,9 +217,11 @@ export class LivePoseCache {
   }
 
   /**
-   * Convert to static PoseTrackFile (for saving to IndexedDB)
+   * Convert to a static track. Still an ExtractionPoseTrack: the live
+   * cache holds extraction frames, so images may be attached — persisting
+   * it goes through stripRuntimeFields (savePoseTrackToStorage does that).
    */
-  toPoseTrackFile(): PoseTrackFile | null {
+  toPoseTrackFile(): ExtractionPoseTrack | null {
     if (this.frames.size === 0) {
       return null;
     }

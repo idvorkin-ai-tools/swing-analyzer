@@ -3,7 +3,7 @@
 // additive here — it does not shadow or alter any existing browser API.
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PoseTrackFile } from '../types/posetrack';
+import type { ExtractionPoseTrack, PoseTrackFile } from '../types/posetrack';
 import {
   clearAllPoseTracks,
   clearMemoryStore,
@@ -35,7 +35,7 @@ const fakeImageData = {
 /**
  * Create a valid PoseTrackFile for testing
  */
-function createValidPoseTrack(): PoseTrackFile {
+function createValidPoseTrack(): ExtractionPoseTrack {
   return {
     metadata: {
       version: '1.0',
@@ -256,7 +256,9 @@ describe('PoseTrackService', () => {
 
     async function putRawRecord(record: {
       videoHash: string;
-      poseTrack: PoseTrackFile;
+      // Runtime shape on purpose: these tests seed pre-strip records that
+      // really did carry images, which is what the migration must clean up.
+      poseTrack: ExtractionPoseTrack;
       model: string;
       createdAt: string;
     }): Promise<void> {
@@ -295,7 +297,7 @@ describe('PoseTrackService', () => {
       });
     }
 
-    function seedBloatedTrack(): PoseTrackFile {
+    function seedBloatedTrack(): ExtractionPoseTrack {
       const track = createValidPoseTrack();
       track.frames.forEach((f) => {
         f.frameImage = fakeImageData;
@@ -303,7 +305,9 @@ describe('PoseTrackService', () => {
       return track;
     }
 
-    async function seedBloatedRecord(track: PoseTrackFile): Promise<void> {
+    async function seedBloatedRecord(
+      track: ExtractionPoseTrack
+    ): Promise<void> {
       await putRawRecord({
         videoHash: track.metadata.sourceVideoHash,
         poseTrack: track,

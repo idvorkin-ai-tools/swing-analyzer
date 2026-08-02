@@ -6,7 +6,7 @@
  */
 
 import type { PoseKeypoint } from '../types';
-import type { CropRegion, PoseTrackFrame } from '../types/posetrack';
+import type { CropRegion, PoseFrameData } from '../types/posetrack';
 import {
   asPixelX,
   asPixelY,
@@ -105,7 +105,7 @@ export function mergeBoundingBoxes(boxes: BoundingBox[]): BoundingBox | null {
  * @returns CropRegion or null if no person detected
  */
 export function calculateStableCropRegion(
-  frames: PoseTrackFrame[],
+  frames: PoseFrameData[],
   videoWidth: VideoWidth,
   videoHeight: VideoHeight,
   widthPadding = 1.4,

@@ -13,12 +13,12 @@ import { Skeleton } from '../models/Skeleton';
 import type { PoseKeypoint } from '../types';
 import type {
   CropRegion,
+  ExtractionFrame,
+  ExtractionPoseTrack,
   PoseExtractionOptions,
   PoseExtractionProgress,
   PoseExtractionResult,
   PoseModel,
-  PoseTrackFile,
-  PoseTrackFrame,
   PrecomputedAngles,
 } from '../types/posetrack';
 import { asVideoHeight, asVideoWidth } from '../utils/brandedTypes';
@@ -276,7 +276,7 @@ export async function extractPosesFromVideo(
     }
 
     // Extract frames
-    const frames: PoseTrackFrame[] = [];
+    const frames: ExtractionFrame[] = [];
     let frameIndex = 0;
     const frameInterval = 1 / fps;
 
@@ -318,7 +318,7 @@ export async function extractPosesFromVideo(
       const videoTime = video.currentTime;
 
       // Create frame data
-      const frame: PoseTrackFrame = {
+      const frame: ExtractionFrame = {
         frameIndex,
         timestamp: Math.round(videoTime * 1000),
         videoTime,
@@ -413,7 +413,7 @@ export async function extractPosesFromVideo(
     });
 
     // Build pose track file
-    const poseTrack: PoseTrackFile = {
+    const poseTrack: ExtractionPoseTrack = {
       metadata,
       frames,
     };

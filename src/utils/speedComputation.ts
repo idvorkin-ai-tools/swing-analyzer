@@ -8,7 +8,7 @@
  */
 
 import { buildSkeletonFromFrame } from '../pipeline/PipelineFactory';
-import type { PoseTrackFrame } from '../types/posetrack';
+import type { PoseFrameData } from '../types/posetrack';
 import {
   asSeconds,
   DEFAULT_USER_HEIGHT_CM,
@@ -44,7 +44,7 @@ const DEFAULT_CONFIG: Required<SpeedComputationConfig> = {
  * First frame has speed 0 (no previous frame to compare).
  */
 function computeRawSpeeds(
-  frames: PoseTrackFrame[],
+  frames: PoseFrameData[],
   config: Required<SpeedComputationConfig>
 ): (MetersPerSecond | null)[] {
   const speeds: (MetersPerSecond | null)[] = new Array(frames.length).fill(
@@ -155,10 +155,10 @@ function smoothSpeeds(
  * @param config - Configuration options
  * @returns The modified frames array
  */
-export function computeFrameSpeeds(
-  frames: PoseTrackFrame[],
+export function computeFrameSpeeds<T extends PoseFrameData>(
+  frames: T[],
   config: SpeedComputationConfig = {}
-): PoseTrackFrame[] {
+): T[] {
   const fullConfig = { ...DEFAULT_CONFIG, ...config };
 
   // Compute raw speeds
@@ -190,6 +190,6 @@ export function computeFrameSpeeds(
 /**
  * Get the precomputed wrist speed for a frame, or null if not available.
  */
-export function getPrecomputedSpeed(frame: PoseTrackFrame): number | null {
+export function getPrecomputedSpeed(frame: PoseFrameData): number | null {
   return frame.angles?.wristSpeed ?? null;
 }

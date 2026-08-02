@@ -1,7 +1,7 @@
 import type { ModelConfig } from '../config/modelConfig';
 import { Skeleton } from '../models/Skeleton';
 import { MediaPipeBodyParts, type PoseKeypoint } from '../types';
-import type { PoseTrackFile, PoseTrackFrame } from '../types/posetrack';
+import type { ExtractionFrame, PoseTrackFile } from '../types/posetrack';
 import { asTimestampMs, asVideoTimeSeconds } from '../utils/brandedTypes';
 import { CachedPoseSkeletonTransformer } from './CachedPoseSkeletonTransformer';
 import type { LivePoseCache } from './LivePoseCache';
@@ -117,11 +117,12 @@ export function createCachedSkeletonTransformer(
 }
 
 /**
- * Build a SkeletonEvent from a PoseTrackFrame
- * Useful for processing cached pose data
+ * Build a SkeletonEvent from a pose frame.
+ * Takes an ExtractionFrame because it forwards frameImage to the filmstrip;
+ * persisted frames satisfy this too (their image is simply absent).
  */
 export function buildSkeletonEventFromFrame(
-  frame: PoseTrackFrame
+  frame: ExtractionFrame
 ): SkeletonEvent {
   const skeleton = buildSkeletonFromFrame(frame.keypoints);
   return {

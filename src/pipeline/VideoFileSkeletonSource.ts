@@ -25,9 +25,10 @@ import {
   recordPoseTrackPersistFailure,
 } from '../services/SessionRecorder';
 import type {
+  ExtractionFrame,
+  ExtractionPoseTrack,
   PoseModel,
   PoseTrackFile,
-  PoseTrackFrame,
 } from '../types/posetrack';
 import { computeFrameSpeeds } from '../utils/speedComputation';
 import { computeQuickVideoHash } from '../utils/videoHash';
@@ -51,7 +52,7 @@ export class VideoFileSkeletonSource implements SkeletonSource {
   private readonly stop$ = new Subject<void>();
 
   private liveCache: LivePoseCache | null = null;
-  private poseTrack: PoseTrackFile | null = null;
+  private poseTrack: ExtractionPoseTrack | null = null;
   private videoHash: string | null = null;
   private abortController: AbortController | null = null;
   private stopped = false;
@@ -159,7 +160,7 @@ export class VideoFileSkeletonSource implements SkeletonSource {
   /**
    * Get the final pose track (after extraction or from cache)
    */
-  getPoseTrack(): PoseTrackFile | null {
+  getPoseTrack(): ExtractionPoseTrack | null {
     return this.poseTrack;
   }
 
@@ -458,7 +459,7 @@ export class VideoFileSkeletonSource implements SkeletonSource {
             },
           });
         },
-        onFrameExtracted: (frame: PoseTrackFrame) => {
+        onFrameExtracted: (frame: ExtractionFrame) => {
           // Add to cache
           this.liveCache?.addFrame(frame);
 

@@ -7,6 +7,7 @@
 
 import type {
   CropRegion,
+  ExtractionPoseTrack,
   PoseModel,
   PoseTrackFile,
   PoseTrackMetadata,
@@ -199,10 +200,14 @@ export function parsePoseTrack(json: string): PoseTrackFile {
  * ImageData IS structured-cloneable, so without stripping it would be
  * persisted to IndexedDB at ~77KB per frame.
  */
-export function stripRuntimeFields(poseTrack: PoseTrackFile): PoseTrackFile {
+export function stripRuntimeFields(
+  poseTrack: ExtractionPoseTrack
+): PoseTrackFile {
   const needsStrip = poseTrack.frames.some((f) => f.frameImage !== undefined);
   if (!needsStrip) {
-    return poseTrack;
+    // Just verified no frame carries an image, which is exactly what the
+    // persisted type asserts; the shapes are otherwise identical.
+    return poseTrack as PoseTrackFile;
   }
   const frames = poseTrack.frames.map((frame) => {
     if (frame.frameImage === undefined) {
@@ -219,7 +224,7 @@ export function stripRuntimeFields(poseTrack: PoseTrackFile): PoseTrackFile {
  * Strips runtime-only fields (like frameImage) that cannot be serialized.
  */
 export function serializePoseTrack(
-  poseTrack: PoseTrackFile,
+  poseTrack: ExtractionPoseTrack,
   pretty: boolean = false
 ): string {
   const cleanedPoseTrack = stripRuntimeFields(poseTrack);
@@ -240,7 +245,7 @@ export async function loadPoseTrackFromFile(
  * Download a pose track as a file
  */
 export function downloadPoseTrack(
-  poseTrack: PoseTrackFile,
+  poseTrack: ExtractionPoseTrack,
   filename?: string
 ): void {
   const json = serializePoseTrack(poseTrack, true);
@@ -296,7 +301,7 @@ function openPoseTrackDB(): Promise<IDBDatabase> {
  * Save a pose track to storage (memory or IndexedDB based on current mode)
  */
 export async function savePoseTrackToStorage(
-  poseTrack: PoseTrackFile
+  poseTrack: ExtractionPoseTrack
 ): Promise<void> {
   const cleaned = stripRuntimeFields(poseTrack);
   const videoHash = cleaned.metadata.sourceVideoHash;

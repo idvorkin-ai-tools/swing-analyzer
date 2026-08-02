@@ -116,7 +116,15 @@ export interface PrecomputedAngles {
 }
 
 /**
- * A single frame of pose data
+ * A single frame of pose data, in its PERSISTED shape.
+ *
+ * Deliberately cannot carry a frame image. ImageData is structured-cloneable,
+ * so an image that reaches this type gets written to IndexedDB at ~77KB per
+ * frame — the bloat regression that motivated the split. The `never` below is
+ * what enforces it: an ExtractionFrame (frameImage?: ImageData) is NOT
+ * assignable to PoseTrackFrame, so the compiler rejects handing runtime frames
+ * to save/serialize. Omitting the field would not — TypeScript only flags
+ * excess properties on fresh object literals, not on variables.
  */
 export interface PoseTrackFrame {
   /** Frame index (0-based) */
@@ -137,17 +145,32 @@ export interface PoseTrackFrame {
   /** Pre-computed angles (optional, saves ~20% analysis time) */
   angles?: PrecomputedAngles;
 
-  /**
-   * RUNTIME ONLY - not serialized to PoseTrack files.
-   * Frame image captured during extraction for filmstrip thumbnails.
-   * Only populated in extraction mode by PoseExtractor.
-   * Cleared immediately after thumbnail creation to conserve memory.
-   */
-  frameImage?: ImageData;
+  /** Never present on persisted frames — see the note above. */
+  frameImage?: never;
 }
 
 /**
- * Complete pose track file structure
+ * A pose frame in flight: extraction and the live cache, where the captured
+ * image is still attached for filmstrip thumbnails. Cross into the persisted
+ * world through stripRuntimeFields(), which is the only supported converter.
+ */
+export type ExtractionFrame = Omit<PoseTrackFrame, 'frameImage'> & {
+  /**
+   * Frame image captured during extraction for filmstrip thumbnails.
+   * Cleared after thumbnail creation to conserve memory.
+   */
+  frameImage?: ImageData;
+};
+
+/**
+ * The fields common to both frame shapes. Use this for helpers that read or
+ * mutate pose data and genuinely do not care whether an image is attached —
+ * it accepts both without letting either leak into the other.
+ */
+export type PoseFrameData = Omit<PoseTrackFrame, 'frameImage'>;
+
+/**
+ * Complete pose track file structure (persisted shape)
  */
 export interface PoseTrackFile {
   /** File metadata */
@@ -156,6 +179,14 @@ export interface PoseTrackFile {
   /** Array of pose frames */
   frames: PoseTrackFrame[];
 }
+
+/**
+ * A pose track still holding runtime frame images — what extraction produces
+ * before stripRuntimeFields() converts it for storage.
+ */
+export type ExtractionPoseTrack = Omit<PoseTrackFile, 'frames'> & {
+  frames: ExtractionFrame[];
+};
 
 /**
  * Options for pose extraction
@@ -177,7 +208,7 @@ export interface PoseExtractionOptions {
    * Callback fired for each frame as it's extracted.
    * Use this to progressively populate a LivePoseCache for streaming playback.
    */
-  onFrameExtracted?: (frame: PoseTrackFrame) => void;
+  onFrameExtracted?: (frame: ExtractionFrame) => void;
 
   /** AbortSignal for cancellation */
   signal?: AbortSignal;
@@ -220,7 +251,7 @@ export interface PoseExtractionProgress {
  */
 export interface PoseExtractionResult {
   /** The extracted pose track */
-  poseTrack: PoseTrackFile;
+  poseTrack: ExtractionPoseTrack;
 
   /** Time taken to extract in milliseconds */
   extractionTimeMs: number;
