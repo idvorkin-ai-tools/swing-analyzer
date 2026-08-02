@@ -340,6 +340,21 @@ export async function extractPosesFromVideo(
         options.onFrameExtracted(frame);
       }
 
+      // Release the thumbnail now that the frame has been delivered.
+      //
+      // The listener chain is synchronous (LivePoseCache.addFrame, then a
+      // Subject.next that reaches FormAnalyzer.processFrame), so any analyzer
+      // that wanted this image has already kept its own reference on a rep
+      // position. What is left here is the copy retained for the rest of the
+      // session by BOTH `frames` and the live cache, which share this object.
+      //
+      // Without this, a 5-minute 30fps extraction holds ~9000 x 120x160 RGBA
+      // buffers ≈ 659MB of pixels until the page is closed. Keeping frameImage
+      // off the PERSISTED type stopped IndexedDB bloat; this stops the runtime
+      // bloat. Frames replayed from cache simply have no image, which is the
+      // case the filmstrip's regeneration fallback already handles.
+      frame.frameImage = undefined;
+
       // Report progress
       if (options.onProgress) {
         const progress: PoseExtractionProgress = {

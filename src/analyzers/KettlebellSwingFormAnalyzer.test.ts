@@ -53,108 +53,118 @@ describe('KettlebellSwingFormAnalyzer', () => {
   });
 
   // Run phase transition tests with BOTH normal and mirrored video angles
-  describe.each(VIDEO_ORIENTATIONS)('phase transitions ($name)', ({
-    angles: ANGLES,
-  }) => {
-    it('transitions from TOP to CONNECT when arms reach vertical with spine upright', () => {
-      // Start in top
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(0));
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(10));
-      expect(analyzer.getPhase()).toBe('top');
+  describe.each(VIDEO_ORIENTATIONS)(
+    'phase transitions ($name)',
+    ({ angles: ANGLES }) => {
+      it('transitions from TOP to CONNECT when arms reach vertical with spine upright', () => {
+        // Start in top
+        analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(0));
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.top),
+          asTimestampMs(10)
+        );
+        expect(analyzer.getPhase()).toBe('top');
 
-      // Transition to connect (|arm| < 15, spine < 25) - arms vertical before hinge
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.connect),
-        asTimestampMs(20)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.connect),
-        asTimestampMs(30)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.connect),
-        asTimestampMs(40)
-      );
+        // Transition to connect (|arm| < 15, spine < 25) - arms vertical before hinge
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.connect),
+          asTimestampMs(20)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.connect),
+          asTimestampMs(30)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.connect),
+          asTimestampMs(40)
+        );
 
-      expect(analyzer.getPhase()).toBe('connect');
-    });
+        expect(analyzer.getPhase()).toBe('connect');
+      });
 
-    it('transitions from CONNECT to BOTTOM when fully hinged', () => {
-      // Get to connect phase first
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(0));
-      analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(10));
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.connect),
-        asTimestampMs(20)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.connect),
-        asTimestampMs(30)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.connect),
-        asTimestampMs(40)
-      );
-      expect(analyzer.getPhase()).toBe('connect');
+      it('transitions from CONNECT to BOTTOM when fully hinged', () => {
+        // Get to connect phase first
+        analyzer.processFrame(createMockSkeleton(ANGLES.top), asTimestampMs(0));
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.top),
+          asTimestampMs(10)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.connect),
+          asTimestampMs(20)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.connect),
+          asTimestampMs(30)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.connect),
+          asTimestampMs(40)
+        );
+        expect(analyzer.getPhase()).toBe('connect');
 
-      // Transition to bottom (|arm| < 15, spine > 35, hip < 140)
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.bottom),
-        asTimestampMs(50)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.bottom),
-        asTimestampMs(60)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.bottom),
-        asTimestampMs(70)
-      );
+        // Transition to bottom (|arm| < 15, spine > 35, hip < 140)
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.bottom),
+          asTimestampMs(50)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.bottom),
+          asTimestampMs(60)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.bottom),
+          asTimestampMs(70)
+        );
 
-      expect(analyzer.getPhase()).toBe('bottom');
-    });
+        expect(analyzer.getPhase()).toBe('bottom');
+      });
 
-    it('transitions from BOTTOM to RELEASE when hips extend', () => {
-      // Get to bottom phase using parameterized angles
-      goToPhaseWithAngles(analyzer, 'bottom', ANGLES);
-      expect(analyzer.getPhase()).toBe('bottom');
+      it('transitions from BOTTOM to RELEASE when hips extend', () => {
+        // Get to bottom phase using parameterized angles
+        goToPhaseWithAngles(analyzer, 'bottom', ANGLES);
+        expect(analyzer.getPhase()).toBe('bottom');
 
-      // Transition to release (|arm| > 10, spine < 25)
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.release),
-        asTimestampMs(100)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.release),
-        asTimestampMs(110)
-      );
-      analyzer.processFrame(
-        createMockSkeleton(ANGLES.release),
-        asTimestampMs(120)
-      );
+        // Transition to release (|arm| > 10, spine < 25)
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.release),
+          asTimestampMs(100)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.release),
+          asTimestampMs(110)
+        );
+        analyzer.processFrame(
+          createMockSkeleton(ANGLES.release),
+          asTimestampMs(120)
+        );
 
-      expect(analyzer.getPhase()).toBe('release');
-    });
+        expect(analyzer.getPhase()).toBe('release');
+      });
 
-    it('transitions from RELEASE to TOP when wrist peaks', () => {
-      // Get to release phase using parameterized angles
-      goToPhaseWithAngles(analyzer, 'release', ANGLES);
-      expect(analyzer.getPhase()).toBe('release');
+      it('transitions from RELEASE to TOP when wrist peaks', () => {
+        // Get to release phase using parameterized angles
+        goToPhaseWithAngles(analyzer, 'release', ANGLES);
+        expect(analyzer.getPhase()).toBe('release');
 
-      // Simulate wrist height rising then falling (peak detection)
-      // Need spine < 25 and hip > 150, and wrist height peaking
-      // Pattern: gradual rise to peak, then fall
-      const wristPattern = [10, 20, 30, 50, 50, 50, 40, 30];
-      let time = 130;
-      for (const wrist of wristPattern) {
-        const angles = { ...ANGLES.top, wristHeight: wrist };
-        analyzer.processFrame(createMockSkeleton(angles), asTimestampMs(time));
-        time += 10;
-      }
+        // Simulate wrist height rising then falling (peak detection)
+        // Need spine < 25 and hip > 150, and wrist height peaking
+        // Pattern: gradual rise to peak, then fall
+        const wristPattern = [10, 20, 30, 50, 50, 50, 40, 30];
+        let time = 130;
+        for (const wrist of wristPattern) {
+          const angles = { ...ANGLES.top, wristHeight: wrist };
+          analyzer.processFrame(
+            createMockSkeleton(angles),
+            asTimestampMs(time)
+          );
+          time += 10;
+        }
 
-      expect(analyzer.getPhase()).toBe('top');
-    });
-  });
+        expect(analyzer.getPhase()).toBe('top');
+      });
+    }
+  );
 
   describe('rep counting', () => {
     it('counts a rep when completing full cycle', () => {
@@ -397,6 +407,48 @@ describe('KettlebellSwingFormAnalyzer', () => {
      * In mirrored video (selfie mode), arm angles have opposite sign
      * but the same magnitude. The algorithm should work with either sign.
      */
+
+    /**
+     * Phase detection uses Math.abs on the arm angle, but the quality metrics
+     * used to grade the rep did not — so a mirrored swing COMPLETED (abs(-80)
+     * clears the top threshold) while its lockout was scored against a
+     * maxArmAngle still sitting at its initial 0, guaranteeing the "get arms
+     * to horizontal" penalty on a rep that reached horizontal.
+     */
+    describe.each(VIDEO_ORIENTATIONS)(
+      'lockout grading is orientation-independent ($name)',
+      ({ angles: ANGLES }) => {
+        it('does not penalize lockout on a rep whose arms reached horizontal', () => {
+          goToPhaseWithAngles(analyzer, 'bottom', ANGLES, 0);
+          const results = collectResults(analyzer, () => {
+            goToPhaseWithAngles(analyzer, 'release', ANGLES, 100);
+            goToPhaseWithAngles(analyzer, 'top', ANGLES, 200);
+          });
+
+          const completion = results.find((r) => r.repCompleted);
+          expect(completion?.repQuality).toBeDefined();
+          expect(
+            completion?.repQuality?.feedback.some((f) =>
+              f.toLowerCase().includes('arms to horizontal')
+            )
+          ).toBe(false);
+        });
+
+        it('reports the lockout angle as a magnitude', () => {
+          goToPhaseWithAngles(analyzer, 'bottom', ANGLES, 0);
+          const results = collectResults(analyzer, () => {
+            goToPhaseWithAngles(analyzer, 'release', ANGLES, 100);
+            goToPhaseWithAngles(analyzer, 'top', ANGLES, 200);
+          });
+
+          const completion = results.find((r) => r.repCompleted);
+          // The fixtures peak at |80| in both orientations.
+          expect(completion?.repQuality?.metrics?.lockoutAngle).toBeGreaterThan(
+            60
+          );
+        });
+      }
+    );
 
     it('detects phases correctly with negative arm angles (normal video)', () => {
       // Normal video: arm behind body = negative angle

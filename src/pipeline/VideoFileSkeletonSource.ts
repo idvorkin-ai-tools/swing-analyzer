@@ -565,11 +565,14 @@ export class VideoFileSkeletonSource implements SkeletonSource {
       }
 
       if (error instanceof DOMException && error.name === 'AbortError') {
-        // Cancelled - not an error
+        // Cancelled is not a failure, but it is not success either: swallowing
+        // it here resolved extract()'s promise normally, so the caller's
+        // continuation ran as if the video had loaded and cleared the loading
+        // UI that the REPLACEMENT video had already put up. Report idle, then
+        // let the cancellation propagate so callers can tell the difference.
         this.stateSubject.next({ type: 'idle' });
-      } else {
-        throw error;
       }
+      throw error;
     } finally {
       // Clean up external signal listener to prevent memory leaks
       if (externalSignal && abortListener) {

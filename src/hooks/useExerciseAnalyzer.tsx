@@ -1198,6 +1198,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       abortController: AbortController,
       context: string // For error messages (e.g., "video" or "sample video")
     ) => {
+      // True once prepareVideoLoad() has handed the loading UI to a newer
+      // attempt; this one must then keep its hands off shared state.
+      const isSupersededLoad = () =>
+        videoLoadAbortControllerRef.current !== abortController;
       const session = inputSessionRef.current;
       const video = videoRef.current;
       if (!session || !video) {
@@ -1226,10 +1230,16 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
         setVideoLoadMessage('Processing video...');
         await session.startVideoFile(videoFile, abortController.signal);
 
+        if (isSupersededLoad()) return false;
         clearLoadingState();
         return true;
       } catch (error) {
-        // AbortError means user switched videos - clean up and return
+        // AbortError means the user switched videos. The loading UI now
+        // belongs to the REPLACEMENT load, so a superseded attempt must not
+        // touch it — clearing here is what left the new video spinner-less
+        // while it was still downloading.
+        if (isSupersededLoad()) return false;
+
         if (error instanceof DOMException && error.name === 'AbortError') {
           clearLoadingState();
           return false;

@@ -157,7 +157,12 @@ export interface PoseTrackFrame {
 export type ExtractionFrame = Omit<PoseTrackFrame, 'frameImage'> & {
   /**
    * Frame image captured during extraction for filmstrip thumbnails.
-   * Cleared after thumbnail creation to conserve memory.
+   *
+   * Live only for the instant between capture and delivery: the extractor
+   * releases it as soon as onFrameExtracted returns, because `frames` and the
+   * live cache share the object and would otherwise pin every thumbnail for
+   * the session. Analyzers that need one keep their own reference on the rep
+   * position, so a frame read back from the cache normally has none.
    */
   frameImage?: ImageData;
 };

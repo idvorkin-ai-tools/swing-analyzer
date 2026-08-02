@@ -464,11 +464,17 @@ export class KettlebellSwingFormAnalyzer extends FormAnalyzerBase<
     this.currentRepMetrics.minHipAngle = asAngleDegrees(
       Math.min(this.currentRepMetrics.minHipAngle, hip)
     );
+    // Arm angles are SIGNED (Skeleton.calculateArmToSpineAngle), and the sign
+    // flips with camera orientation. Phase detection already compares
+    // magnitudes; grading must too, or a mirrored swing that genuinely reached
+    // horizontal (-80°) leaves maxArmAngle at its initial 0 and is scored as a
+    // failed lockout.
+    const armMagnitude = Math.abs(arm);
     this.currentRepMetrics.maxArmAngle = asAngleDegrees(
-      Math.max(this.currentRepMetrics.maxArmAngle, arm)
+      Math.max(this.currentRepMetrics.maxArmAngle, armMagnitude)
     );
     this.currentRepMetrics.minArmAngle = asAngleDegrees(
-      Math.min(this.currentRepMetrics.minArmAngle, arm)
+      Math.min(this.currentRepMetrics.minArmAngle, armMagnitude)
     );
 
     const kneeFlexion = asAngleDegrees(175 - knee);
