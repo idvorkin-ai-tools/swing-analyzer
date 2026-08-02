@@ -222,6 +222,92 @@ describe('VideoFileSkeletonSource', () => {
     expect(source.state.type).toBe('idle');
   });
 
+  describe('replayCachedFrames', () => {
+    /**
+     * Switching exercise swaps the analyzer, which only affects LATER frames.
+     * Re-scoring the video means pushing the cached frames through again —
+     * the poses are already on disk, so no ML inference is involved.
+     */
+    it('re-emits every cached frame', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(4));
+      const source = makeSource();
+      const skeletons: unknown[] = [];
+
+      await source.start();
+      await flushTimers();
+      source.skeletons$.subscribe((e) => skeletons.push(e));
+
+      expect(source.replayCachedFrames()).toBe(true);
+      await flushTimers();
+
+      expect(skeletons).toHaveLength(4);
+    });
+
+    it('signals batch completion so the UI can drop its progress state', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(4));
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      const states: SkeletonSourceState[] = [];
+      source.state$.subscribe((s) => states.push(s));
+      source.replayCachedFrames();
+      await flushTimers();
+
+      expect(states[states.length - 1]).toMatchObject({
+        batch: { framesProcessed: 4 },
+      });
+    });
+
+    it('refuses to replay while extraction is still in flight', async () => {
+      // A partial track would double-process whatever the extractor delivers
+      // next, so the caller has to wait for completion. In practice the
+      // no-completed-track check is what rejects this (poseTrack is only
+      // assigned once extraction resolves); the isExtractionComplete guard
+      // behind it covers a cache that was populated but never closed out.
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(null);
+      vi.mocked(extractPosesFromVideo).mockImplementation(
+        () => new Promise(() => {}) // never resolves: extraction in flight
+      );
+      const source = makeSource();
+      source.start();
+      await flushTimers();
+
+      expect(source.replayCachedFrames()).toBe(false);
+      expect(source.getPoseTrack()).toBeNull();
+    });
+
+    it('refuses to replay when there is nothing cached', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(null);
+      const source = new VideoFileSkeletonSource({
+        videoFile: new File(['x'], 'a.mp4', { type: 'video/mp4' }),
+        videoElement: {} as HTMLVideoElement,
+        canvasElement: {} as HTMLCanvasElement,
+        autoExtract: false,
+      });
+      await source.start();
+
+      expect(source.replayCachedFrames()).toBe(false);
+    });
+
+    it('stops replaying when the source is stopped mid-flight', async () => {
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(600));
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+      await flushTimers(); // initial pass drains
+
+      const skeletons: unknown[] = [];
+      source.skeletons$.subscribe((e) => skeletons.push(e));
+      source.replayCachedFrames();
+      await flushTimers(); // first chunk
+      source.stop();
+      await flushTimers();
+
+      expect(skeletons).toHaveLength(500);
+    });
+  });
+
   describe('cached replay yields between chunks', () => {
     // Each emission synchronously drives the analyzer and React state, so a
     // long track replayed in one task freezes the tab. 500 frames per chunk.

@@ -124,6 +124,54 @@ describe('Pipeline error contract', () => {
     expect(pipeline.processSkeletonEvent(makeSkeletonEvent())).toBe(2);
   });
 
+  /**
+   * Swapping the analyzer only changes how LATER frames are graded. Detection
+   * often locks in tens of frames late, and a user override can land after the
+   * whole video is analyzed, so the pipeline has to admit that what it already
+   * scored describes the wrong exercise — otherwise the UI keeps a rep count
+   * blended from two analyzers.
+   */
+  describe('stale-analysis signalling', () => {
+    it('is not stale before anything has been analyzed', () => {
+      const pipeline = build([1]);
+      expect(pipeline.needsReanalysis()).toBe(false);
+    });
+
+    it('reports stale after the analyzer changes mid-video', () => {
+      const pipeline = build([1]);
+      pipeline.processSkeletonEvent(makeSkeletonEvent());
+      expect(pipeline.needsReanalysis()).toBe(false);
+
+      pipeline.setExerciseType('pistol-squat');
+
+      expect(pipeline.needsReanalysis()).toBe(true);
+    });
+
+    it('does not report stale when the selection does not actually change', () => {
+      const pipeline = build([1]);
+      pipeline.processSkeletonEvent(makeSkeletonEvent());
+      // build() already selected kettlebell-swing.
+      pipeline.setExerciseType('kettlebell-swing');
+      expect(pipeline.needsReanalysis()).toBe(false);
+    });
+
+    it('prepareForReanalysis clears the flag and the rep count without unlocking detection', () => {
+      const pipeline = build([3]);
+      pipeline.processSkeletonEvent(makeSkeletonEvent());
+      pipeline.setExerciseType('pistol-squat');
+      expect(pipeline.needsReanalysis()).toBe(true);
+
+      pipeline.prepareForReanalysis();
+
+      expect(pipeline.needsReanalysis()).toBe(false);
+      expect(pipeline.getRepCount()).toBe(0);
+      // reset() would re-enable auto-switching and throw away the override;
+      // the whole point is to keep the user's choice while re-scoring.
+      expect(pipeline.isExerciseDetectionLocked()).toBe(true);
+      expect(pipeline.getDetectedExercise()).toBe('pistol-squat');
+    });
+  });
+
   it('keeps the error channel open across many failing frames', () => {
     const pipeline = build(['throw']);
     const channelDied = vi.fn();

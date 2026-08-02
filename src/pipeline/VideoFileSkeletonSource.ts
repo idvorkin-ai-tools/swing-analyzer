@@ -196,6 +196,97 @@ export class VideoFileSkeletonSource implements SkeletonSource {
   }
 
   /**
+   * Push a batch of frames out as skeleton events, yielding between chunks,
+   * then signal batch completion.
+   *
+   * Every emission synchronously drives the form analyzer and React state, so
+   * this must not run as one task; the guard is re-checked per chunk so a
+   * stop() or a newer start() halts a replay already in flight.
+   */
+  private emitFramesInChunks(
+    frames: ExtractionFrame[],
+    generation: number
+  ): void {
+    if (this.stopped || generation !== this.generation) {
+      return;
+    }
+
+    const startTime = performance.now();
+    console.log('[VideoFileSkeletonSource] Emitting', frames.length, 'frames');
+    let emitCount = 0;
+
+    const emitChunk = () => {
+      if (this.stopped || generation !== this.generation) {
+        return;
+      }
+
+      const chunkEnd = Math.min(
+        emitCount + CACHED_REPLAY_CHUNK_SIZE,
+        frames.length
+      );
+      for (; emitCount < chunkEnd; emitCount++) {
+        this.skeletonSubject.next(
+          buildSkeletonEventFromFrame(frames[emitCount])
+        );
+      }
+
+      if (emitCount < frames.length) {
+        setTimeout(emitChunk, 0);
+        return;
+      }
+
+      const processingTime = performance.now() - startTime;
+      console.log(
+        '[VideoFileSkeletonSource] Done emitting',
+        emitCount,
+        'frames in',
+        processingTime.toFixed(0),
+        'ms'
+      );
+
+      this.stateSubject.next({
+        type: 'active',
+        batch: {
+          framesProcessed: emitCount,
+          processingTimeMs: processingTime,
+        },
+      });
+    };
+
+    emitChunk();
+  }
+
+  /**
+   * Re-emit every cached frame so a freshly swapped analyzer can score the
+   * whole video, not just the frames that happen to arrive after the switch.
+   *
+   * Returns false when there is nothing complete to replay — during
+   * extraction the frames are still arriving, and replaying a partial track
+   * would double-process whatever the extractor delivers next.
+   *
+   * Callers MUST reset rep/gallery state first: this feeds the same subject
+   * as the initial pass, so a stale rep count would simply keep climbing.
+   */
+  replayCachedFrames(): boolean {
+    const frames = this.poseTrack?.frames;
+    if (!frames || frames.length === 0) {
+      return false;
+    }
+    if (this.liveCache && !this.liveCache.isExtractionComplete()) {
+      return false;
+    }
+    if (this.stopped) {
+      return false;
+    }
+
+    const generation = this.generation;
+    setTimeout(() => {
+      this.emitFramesInChunks(frames, generation);
+    }, 0);
+    return true;
+  }
+
+  /**
    * Get the live cache (for pipeline integration during extraction)
    */
   getLiveCache(): LivePoseCache | null {
@@ -300,64 +391,7 @@ export class VideoFileSkeletonSource implements SkeletonSource {
           'cached skeleton events'
         );
         setTimeout(() => {
-          if (this.stopped || generation !== this.generation) {
-            return;
-          }
-          const startTime = performance.now();
-          console.log(
-            '[VideoFileSkeletonSource] Emitting',
-            cached.frames.length,
-            'cached skeleton events'
-          );
-          const frames = cached.frames;
-          let emitCount = 0;
-
-          // Emit in chunks, yielding between them. Every emission runs the
-          // analyzer and React updates synchronously, so replaying a long
-          // video in one task froze the tab — on the path that exists to be
-          // the FAST one. The chunk is large enough that ordinary videos
-          // still finish in the first pass.
-          const emitChunk = () => {
-            if (this.stopped || generation !== this.generation) {
-              return;
-            }
-
-            const chunkEnd = Math.min(
-              emitCount + CACHED_REPLAY_CHUNK_SIZE,
-              frames.length
-            );
-            for (; emitCount < chunkEnd; emitCount++) {
-              this.skeletonSubject.next(
-                buildSkeletonEventFromFrame(frames[emitCount])
-              );
-            }
-
-            if (emitCount < frames.length) {
-              setTimeout(emitChunk, 0);
-              return;
-            }
-
-            const processingTime = performance.now() - startTime;
-            console.log(
-              '[VideoFileSkeletonSource] Done emitting',
-              emitCount,
-              'cached skeleton events in',
-              processingTime.toFixed(0),
-              'ms'
-            );
-
-            // Emit completion event after all skeletons processed
-            // This is a signal that batch processing is done
-            this.stateSubject.next({
-              type: 'active',
-              batch: {
-                framesProcessed: emitCount,
-                processingTimeMs: processingTime,
-              },
-            });
-          };
-
-          emitChunk();
+          this.emitFramesInChunks(cached.frames, generation);
         }, 0);
 
         return;

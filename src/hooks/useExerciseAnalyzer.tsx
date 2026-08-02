@@ -70,6 +70,14 @@ const REP_SYNC_INTERVAL_MS = 1000; // 1 second
 const DEFAULT_PHASES = [...PHASE_ORDER];
 
 /**
+ * How many times one video may be re-scored after an analyzer swap. One pass
+ * covers the real cases (detection locking in late, a user override); more
+ * than that means detection is oscillating, and looping forever would be worse
+ * than a slightly wrong count.
+ */
+const MAX_REANALYSIS_PASSES = 1;
+
+/**
  * Get filename from URL path, with fallback for edge cases.
  */
 function getFileNameFromUrl(url: string): string {
@@ -646,6 +654,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // Skeleton Event Handler
   // ========================================
   // Use a ref to hold the handler so video events can access it stably
+  // Set from the callback defined further down; the session effect above it
+  // cannot reference that const directly without a TDZ error.
+  const reanalyzeRef = useRef<(() => boolean) | null>(null);
+  const reanalysisPassesRef = useRef<number>(0);
   const skeletonHandlerRef = useRef<((event: SkeletonEvent) => void) | null>(
     null
   );
@@ -802,6 +814,18 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
             frameIndexRef.current = 0;
             // Cache processing complete - clear the loading state
             setIsCacheProcessing(false);
+
+            // Detection routinely locks in tens of frames late, so the frames
+            // before the switch were scored as the wrong exercise. Now that
+            // every frame is cached, replay them through the analyzer that
+            // actually won. prepareForReanalysis() clears the flag, so the
+            // batch this kicks off does not re-trigger here.
+            if (pipelineRef.current?.needsReanalysis()) {
+              console.log(
+                '[useExerciseAnalyzer] Analyzer changed mid-analysis; re-scoring the video'
+              );
+              reanalyzeRef.current?.();
+            }
 
             // Calculate crop region after batch complete (uses rep frames when available)
             const videoSource = session.getVideoFileSource();
@@ -1165,6 +1189,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     setRepThumbnails(new Map());
     pipelineRef.current?.reset();
     hasRecordedExtractionStartRef.current = false;
+    reanalysisPassesRef.current = 0; // budget is per video, not per session
     setDetectedExercise('unknown');
     setDetectionConfidence(0);
     setIsDetectionLocked(false);
@@ -1764,16 +1789,76 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // ========================================
   // Exercise Type Override
   // ========================================
-  const setExerciseType = useCallback((exercise: DetectedExercise) => {
-    pipelineRef.current?.setExerciseType(exercise);
-    setDetectedExercise(exercise);
-    setIsDetectionLocked(true);
-    // Update phases when exercise type is manually changed
-    const formAnalyzer = pipelineRef.current?.getFormAnalyzer();
-    if (formAnalyzer) {
-      setCurrentPhases(formAnalyzer.getPhases());
+  /**
+   * Re-score the whole video with the currently selected analyzer.
+   *
+   * Swapping the analyzer only changes how FUTURE frames are graded, so
+   * without this the rep count and gallery keep describing the exercise that
+   * was selected earlier. The poses are already cached, so this is a replay,
+   * not a re-extraction — no ML inference runs.
+   *
+   * Order matters: clear the counters BEFORE replaying, because the replay
+   * feeds the same handler as the original pass and would otherwise keep
+   * counting up from the stale total.
+   */
+  const reanalyzeCurrentVideo = useCallback((): boolean => {
+    const source = inputSessionRef.current?.getVideoFileSource();
+    const pipeline = pipelineRef.current;
+    if (!source || !pipeline) return false;
+
+    // A replay can itself end with the analyzer swapped again if detection has
+    // not locked and keeps changing its mind. Bound it: an unstable detector
+    // should degrade to a slightly-wrong rep count, never to a video that
+    // re-analyzes forever.
+    if (reanalysisPassesRef.current >= MAX_REANALYSIS_PASSES) {
+      console.warn(
+        '[useExerciseAnalyzer] Skipping re-analysis: already re-scored this video'
+      );
+      pipeline.prepareForReanalysis(); // clear the flag so it stops asking
+      return false;
     }
+    reanalysisPassesRef.current++;
+
+    pipeline.prepareForReanalysis();
+    prevRepCountRef.current = 0;
+    frameIndexRef.current = 0;
+    setRepCount(0);
+    setRepThumbnails(new Map());
+    setAppState((prev) => ({
+      ...prev,
+      currentRepIndex: 0,
+      repCounter: { ...prev.repCounter, count: 0 },
+    }));
+
+    const started = source.replayCachedFrames();
+    if (started) {
+      setIsCacheProcessing(true);
+    }
+    return started;
   }, []);
+
+  useEffect(() => {
+    reanalyzeRef.current = reanalyzeCurrentVideo;
+  }, [reanalyzeCurrentVideo]);
+
+  const setExerciseType = useCallback(
+    (exercise: DetectedExercise) => {
+      pipelineRef.current?.setExerciseType(exercise);
+      setDetectedExercise(exercise);
+      setIsDetectionLocked(true);
+      // Update phases when exercise type is manually changed
+      const formAnalyzer = pipelineRef.current?.getFormAnalyzer();
+      if (formAnalyzer) {
+        setCurrentPhases(formAnalyzer.getPhases());
+      }
+      // Re-score what has already been analyzed under the previous exercise.
+      // No-ops while extraction is still running: those frames are still
+      // arriving and will reach the new analyzer anyway, and the completion
+      // handler re-checks needsReanalysis() for the frames that did not.
+      reanalyzeCurrentVideo();
+    },
+    [reanalyzeCurrentVideo]
+  );
 
   // ========================================
   // Helper Functions

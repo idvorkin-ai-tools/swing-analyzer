@@ -62,6 +62,17 @@ export class Pipeline {
   private detectedExercise: DetectedExercise = 'unknown';
   private autoSwitchAnalyzer = true; // Auto-switch analyzer when exercise detected
 
+  /** Frames scored by the CURRENT analyzer since the last reset/reanalysis. */
+  private framesAnalyzed = 0;
+  /**
+   * Set when the analyzer was swapped after it had already scored frames, so
+   * those earlier frames were graded by the wrong exercise. Detection often
+   * locks in tens of frames late, and a user override can land after the whole
+   * video is analyzed — in both cases the rep count and gallery on screen
+   * describe an exercise that is no longer selected.
+   */
+  private staleAnalysis = false;
+
   constructor(
     private frameAcquisition: FrameAcquisition,
     private skeletonTransformer: SkeletonTransformer,
@@ -132,6 +143,8 @@ export class Pipeline {
     this.autoSwitchAnalyzer = true;
     this.latestSkeleton = null;
     this.repCount = 0;
+    this.framesAnalyzed = 0;
+    this.staleAnalysis = false;
   }
 
   /**
@@ -210,6 +223,8 @@ export class Pipeline {
           skeletonEvent.poseEvent.frameEvent.frameImage
         );
 
+        this.framesAnalyzed++;
+
         // Update rep count
         this.repCount = result.repCount;
 
@@ -273,6 +288,15 @@ export class Pipeline {
     // Swap in the new analyzer
     this.formAnalyzer = newAnalyzer;
 
+    // Anything already scored was scored as a different exercise. The new
+    // analyzer starts empty, so without a replay the result on screen is a
+    // blend: reps from before the switch counted by the old analyzer, reps
+    // after counted by the new one.
+    if (this.framesAnalyzed > 0) {
+      this.staleAnalysis = true;
+    }
+    this.framesAnalyzed = 0;
+
     console.log(`[Pipeline] Switched to ${exercise} analyzer`);
   }
 
@@ -309,6 +333,30 @@ export class Pipeline {
     this.autoSwitchAnalyzer = false; // Disable auto-switch since user chose
     this.exerciseDetector.lock(exercise); // Lock detector to prevent further detection
     this.switchToExercise(exercise);
+  }
+
+  /**
+   * True when frames were scored by an analyzer that has since been replaced,
+   * so the current rep count and gallery describe the wrong exercise. Clear it
+   * by replaying the video through prepareForReanalysis().
+   */
+  needsReanalysis(): boolean {
+    return this.staleAnalysis;
+  }
+
+  /**
+   * Clear per-video analysis state while KEEPING the exercise selection.
+   *
+   * reset() cannot be used for this: it unlocks the detector and re-enables
+   * auto-switching, which would immediately undo the user's override. This
+   * only drops what a replay is about to recompute.
+   */
+  prepareForReanalysis(): void {
+    this.formAnalyzer.reset();
+    this.repCount = 0;
+    this.latestSkeleton = null;
+    this.framesAnalyzed = 0;
+    this.staleAnalysis = false;
   }
 
   /**
