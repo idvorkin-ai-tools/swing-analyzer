@@ -273,8 +273,24 @@ describe('VideoFileSkeletonSource', () => {
       source.start();
       await flushTimers();
 
+      expect(source.canReplayCachedFrames()).toBe(false);
       expect(source.replayCachedFrames()).toBe(false);
       expect(source.getPoseTrack()).toBeNull();
+    });
+
+    it('reports replay feasibility before any state is discarded', async () => {
+      // The caller must be able to ask WITHOUT committing: it clears the rep
+      // count, gallery and the pipeline's stale-analysis flag before replaying,
+      // and doing that for a replay that then refuses to start would drop the
+      // re-score silently.
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(4));
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(source.canReplayCachedFrames()).toBe(true);
+      source.stop();
+      expect(source.canReplayCachedFrames()).toBe(false);
     });
 
     it('refuses to replay when there is nothing cached', async () => {

@@ -1806,6 +1806,12 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     const pipeline = pipelineRef.current;
     if (!source || !pipeline) return false;
 
+    // Bail BEFORE touching any state. Overriding the exercise mid-extraction
+    // lands here with nothing replayable yet; clearing the stale flag now
+    // would mean batch completion never retries, silently dropping the
+    // re-score the user just asked for.
+    if (!source.canReplayCachedFrames()) return false;
+
     // A replay can itself end with the analyzer swapped again if detection has
     // not locked and keeps changing its mind. Bound it: an unstable detector
     // should degrade to a slightly-wrong rep count, never to a video that

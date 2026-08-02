@@ -267,7 +267,7 @@ export class VideoFileSkeletonSource implements SkeletonSource {
    * Callers MUST reset rep/gallery state first: this feeds the same subject
    * as the initial pass, so a stale rep count would simply keep climbing.
    */
-  replayCachedFrames(): boolean {
+  canReplayCachedFrames(): boolean {
     const frames = this.poseTrack?.frames;
     if (!frames || frames.length === 0) {
       return false;
@@ -275,7 +275,15 @@ export class VideoFileSkeletonSource implements SkeletonSource {
     if (this.liveCache && !this.liveCache.isExtractionComplete()) {
       return false;
     }
-    if (this.stopped) {
+    return !this.stopped;
+  }
+
+  replayCachedFrames(): boolean {
+    if (!this.canReplayCachedFrames()) {
+      return false;
+    }
+    const frames = this.poseTrack?.frames;
+    if (!frames) {
       return false;
     }
 
