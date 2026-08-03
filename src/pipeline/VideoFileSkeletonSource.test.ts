@@ -24,10 +24,16 @@ vi.mock('../utils/videoHash', () => ({
   computeQuickVideoHash: vi.fn().mockResolvedValue('hash-abc'),
 }));
 vi.mock('./PipelineFactory', () => ({
-  buildSkeletonEventFromFrame: vi.fn().mockReturnValue({
+  // Carries frameIndex through so tests can assert WHICH frames were emitted
+  // and in what order. A constant event would let an interleaved or duplicated
+  // replay pass any assertion that only counts emissions.
+  buildSkeletonEventFromFrame: vi.fn((frame) => ({
     skeleton: {},
-    poseEvent: { frameEvent: { videoTime: 0 } },
-  }),
+    poseEvent: {
+      frameEvent: { videoTime: frame?.videoTime ?? 0 },
+      frameIndex: frame?.frameIndex ?? -1,
+    },
+  })),
 }));
 
 import {
@@ -301,6 +307,13 @@ describe('VideoFileSkeletonSource', () => {
       expect(skeletons).toHaveLength(600);
       const completions = states.filter((s) => 'batch' in s && s.batch);
       expect(completions).toHaveLength(1);
+
+      // Counting alone would not catch interleaving that happens to total 600,
+      // so assert the actual sequence: frames 0..599, in order, no repeats.
+      const indices = skeletons.map(
+        (e) => (e as { poseEvent: { frameIndex: number } }).poseEvent.frameIndex
+      );
+      expect(indices).toEqual(Array.from({ length: 600 }, (_, i) => i));
     });
 
     it('reports replay feasibility before any state is discarded', async () => {
@@ -463,6 +476,25 @@ describe('VideoFileSkeletonSource', () => {
       await flushTimers();
 
       expect(extractPosesFromVideo).not.toHaveBeenCalled();
+    });
+
+    it('leaves the audit open when the reading sits between recorded and the re-extract threshold', async () => {
+      // 45 against a recorded 30 is the signature of a 60fps source whose
+      // audit dropped callbacks: too high to be a genuine 30, too low to
+      // trigger re-extraction. Stamping it would make the under-sampling
+      // permanent — the one outcome this whole audit exists to prevent — so
+      // the track is kept but left re-auditable for a cleaner measurement.
+      const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
+      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(45);
+
+      const source = makeSource();
+      await source.start();
+      await flushTimers();
+
+      expect(extractPosesFromVideo).not.toHaveBeenCalled();
+      expect(source.getPoseTrack()?.metadata.fpsMeasured).toBeUndefined();
+      expect(savePoseTrackToStorage).not.toHaveBeenCalled();
     });
 
     it('stamps a slower-than-recorded source so it is not re-audited forever', async () => {

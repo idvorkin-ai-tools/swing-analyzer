@@ -49,6 +49,15 @@ import type {
 const UNDER_SAMPLING_RATIO = 1.5;
 
 /**
+ * How far ABOVE a track's recorded fps a reading may sit and still close the
+ * audit. Beyond this the reading looks like a partially-dropped measurement of
+ * a faster source, so the audit stays open rather than blessing a track that
+ * may genuinely be under-sampled. Readings at or below recorded always close
+ * it — dropped frames pull a measurement down, never up.
+ */
+const STAMP_TOLERANCE = 1.1;
+
+/**
  * Cached frames replayed per macrotask. Each emission synchronously drives the
  * form analyzer and React state, so a 30-minute video (~54k frames) in one
  * task locks the tab. Sized so ordinary clips still replay in a single pass —
@@ -180,16 +189,30 @@ export class VideoFileSkeletonSource implements SkeletonSource {
       return false;
     }
 
-    // The measurement succeeded and did not indicate under-sampling, so the
-    // audit is done: stamp it. Requiring close agreement instead meant a
-    // legitimately slower source — a 24 or 25fps video written by the old
-    // 30fps-assuming extractor — could never be stamped and paid the hidden
-    // video measurement on every single cache hit, forever.
+    // Whether to close the audit turns on the DIRECTION of the disagreement,
+    // because dropped rVFC callbacks can only ever pull a reading DOWN:
     //
-    // The stamp records only that the check ran; it never rewrites `fps`, and
-    // the track stays correct either way because its frames really are spaced
-    // at 1/recorded. The cost of a spuriously low reading is therefore a
-    // missed future audit, not corrupted data.
+    // - at or below recorded (24 or 25 against a 30fps-assuming extractor):
+    //   under-sampling is excluded, since a faster source cannot read slower
+    //   than the track. Safe to close, and closing it is the point — these
+    //   were re-measuring on every single cache hit, forever.
+    // - above recorded but under the re-extract threshold (45 against 30):
+    //   exactly the shape of a 60fps source whose audit dropped frames.
+    //   Leave it OPEN so a later, cleaner measurement can still catch it;
+    //   stamping here would make the under-sampling permanent, which is a
+    //   worse bug than the repeated measurement it saves.
+    //
+    // A true 60fps source read as exactly 30 is indistinguishable from a real
+    // 30fps one by any single measurement, and is stamped. That limit is
+    // inherent to one-shot sampling, not introduced here.
+    const suspiciouslyHigh = measuredFps > recordedFps * STAMP_TOLERANCE;
+    if (suspiciouslyHigh) {
+      console.log(
+        `[VideoFileSkeletonSource] Measured ${measuredFps}fps against a recorded ${recordedFps}fps — inconclusive, leaving the audit open`
+      );
+      return true;
+    }
+
     cached.metadata.fpsMeasured = true;
     try {
       await savePoseTrackToStorage(cached);
