@@ -19,13 +19,6 @@ export interface PoseResult {
   score?: number;
 }
 
-export interface RepCounter {
-  count: number;
-  isConnect: boolean;
-  lastConnectState: boolean;
-  connectThreshold: number;
-}
-
 export enum SwingPositionName {
   Top = 'top',
   Connect = 'connect',
@@ -51,7 +44,6 @@ export interface AppState {
   isModelLoaded: boolean;
   isProcessing: boolean;
   displayMode: DisplayMode; // Track the current display mode
-  repCounter: RepCounter;
   showBodyParts: boolean;
   bodyPartDisplayTime: number; // in seconds
   currentRepIndex: number; // Index of the current rep being viewed

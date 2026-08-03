@@ -179,12 +179,6 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     displayMode: 'both',
     isModelLoaded: false,
     isProcessing: false,
-    repCounter: {
-      count: 0,
-      isConnect: false,
-      lastConnectState: false,
-      connectThreshold: 45,
-    },
     showBodyParts: true,
     bodyPartDisplayTime: 0.5,
     currentRepIndex: 0,
@@ -1780,16 +1774,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
     setIsDetectionLocked(false);
     setCurrentPhases(DEFAULT_PHASES);
     setWorkingLeg(null);
-    setAppState((prev) => ({
-      ...prev,
-      currentRepIndex: 0,
-      repCounter: {
-        ...prev.repCounter,
-        count: 0,
-        isConnect: false,
-        lastConnectState: false,
-      },
-    }));
+    setAppState((prev) => ({ ...prev, currentRepIndex: 0 }));
   }, []);
 
   // ========================================
@@ -1844,11 +1829,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
       frameIndexRef.current = 0;
       setRepCount(0);
       setRepThumbnails(new Map());
-      setAppState((prev) => ({
-        ...prev,
-        currentRepIndex: 0,
-        repCounter: { ...prev.repCounter, count: 0 },
-      }));
+      setAppState((prev) => ({ ...prev, currentRepIndex: 0 }));
 
       const started = source.replayCachedFrames();
       if (started) {
