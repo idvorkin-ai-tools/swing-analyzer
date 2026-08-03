@@ -326,13 +326,32 @@ To add a new exercise:
 
 ### Architectural Patterns (Follow These)
 
-| Pattern                     | Why                                                         |
-| --------------------------- | ----------------------------------------------------------- |
-| **Streaming over batching** | Everything should stream through                            |
-| **Precomputed only**        | Never compute on phone - precompute on disk or at same time |
-| **React over DOM**          | No DOM manipulation - use React components                  |
-| **Humble objects**          | External system interactions behind managers for testing    |
-| **Plugin analyzers**        | New exercises via registry, not modifying core              |
+These are the intended patterns. Where today's code diverges, that is noted —
+treat the note as the current truth and the pattern as the direction.
+
+| Pattern                        | Why                                                         |
+| ------------------------------ | ----------------------------------------------------------- |
+| **Streaming over batching**    | Frames flow one at a time, never as a whole-video array     |
+| **Precomputed only**           | Never compute on phone - precompute on disk or at same time |
+| **Imperative media, React UI** | Media/canvas APIs are imperative; layout is React's         |
+| **Humble objects**             | External system interactions behind managers for testing    |
+| **Plugin analyzers**           | New exercises via registry, not modifying core              |
+
+**Where the code diverges today:**
+
+- _Streaming_: transport is RxJS on the SOURCE (`skeletons$`), not inside
+  `Pipeline`. The Pipeline-owned graph (`Pipeline.start()`) was deleted after
+  it went callerless; the hook subscribes and drives `processSkeletonEvent()`.
+- _Precomputed only_: aspirational. Playback still rebuilds a `Skeleton` and
+  recomputes HUD angles per video-frame callback, and crop is computed after
+  load in the hook.
+- _Imperative media, React UI_: previously stated as "no DOM manipulation",
+  which was never true and shouldn't be — video/canvas control has to be
+  imperative. The real rule is narrower: don't drive **layout or style**
+  imperatively, because that creates two competing UI authorities.
+- _Plugin analyzers_: true for analyzer _selection_, false for adding an
+  exercise end to end — `ExerciseDetector` and the `DetectedExercise` union
+  hard-code the known exercises.
 
 ### Current Model: BlazePose
 

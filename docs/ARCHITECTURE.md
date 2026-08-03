@@ -20,7 +20,7 @@ Frame → Pose Detection → Skeleton → Form Analysis → Rep Count → UI
                               ▲
 ┌─────────────────────────────────────────────────────────────┐
 │                       HOOKS LAYER                           │
-│  State management: useSwingAnalyzerV2, useInputSession      │
+│  State management: useExerciseAnalyzer, useInputSession      │
 └─────────────────────────────────────────────────────────────┘
                               ▲
 ┌─────────────────────────────────────────────────────────────┐
@@ -90,7 +90,7 @@ State management and side effect coordination.
 
 | Hook                       | Purpose                                    |
 | -------------------------- | ------------------------------------------ |
-| `useSwingAnalyzerV2.tsx`   | Main coordinator - connects pipeline to UI |
+| `useExerciseAnalyzer.tsx`  | Main coordinator - connects pipeline to UI |
 | `useInputSession.ts`       | Input mode state machine                   |
 | `useKeyboardNavigation.ts` | Keyboard shortcuts                         |
 
@@ -98,7 +98,7 @@ State management and side effect coordination.
 
 - UI-specific state → keep in component
 - Shared/complex state → create hook
-- Cross-cutting concerns → add to `useSwingAnalyzerV2`
+- Cross-cutting concerns → add to `useExerciseAnalyzer`
 
 ### 3. Pipeline Layer (`src/pipeline/`)
 
@@ -120,15 +120,24 @@ Data processing orchestration. This is where frames become analysis results.
 ```
 VideoFileSkeletonSource
     │
-    ▼ (emits SkeletonEvent)
+    ▼ (emits SkeletonEvent on skeletons$)
+useExerciseAnalyzer  ← subscribes, and drives the pipeline frame by frame
+    │
+    ▼ (calls per event)
 Pipeline.processSkeletonEvent()
     │
     ├── exerciseDetector.processFrame() → auto-detect (until locked)
     ├── formAnalyzer.processFrame()     → phase detection + rep counting
     │
-    ▼ (returns rep count; thumbnails/errors via subjects)
-UI updates (hooks consume results)
+    ▼ (returns rep count; thumbnails/errors/detection via subjects)
+UI updates (the same hook consumes results)
 ```
+
+The hook is deliberately in the middle: the Pipeline does not subscribe to a
+source. There is no longer a Pipeline-owned RxJS ingestion graph — the legacy
+`Pipeline.start()` streaming path was deleted once it had no production
+callers. Frames reach analysis only through `processSkeletonEvent()`, called
+either by the source's replay of cached poses or by extraction.
 
 **Where to add pipeline logic:**
 
@@ -378,7 +387,7 @@ if (now - lastRepSyncTimeRef.current >= REP_SYNC_INTERVAL_MS) {
 
 **Example locations:**
 
-- `useSwingAnalyzerV2.tsx`: Rep counter and position sync during playback
+- `useExerciseAnalyzer.tsx`: Rep counter and position sync during playback
 - Future: Form quality indicators, coaching cues
 
 ## Testing Strategy
