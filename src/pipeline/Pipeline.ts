@@ -351,6 +351,15 @@ export class Pipeline {
    * auto-switching, which would immediately undo the user's override. This
    * only drops what a replay is about to recompute.
    */
+  /**
+   * Drop the stale-analysis flag WITHOUT discarding the current scores. Use
+   * when declining a re-score: zeroing the rep count here would leave the
+   * pipeline at 0 while the UI still shows the reps it already rendered.
+   */
+  acknowledgeStaleAnalysis(): void {
+    this.staleAnalysis = false;
+  }
+
   prepareForReanalysis(): void {
     this.formAnalyzer.reset();
     this.repCount = 0;

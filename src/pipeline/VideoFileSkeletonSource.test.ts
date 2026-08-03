@@ -278,6 +278,31 @@ describe('VideoFileSkeletonSource', () => {
       expect(source.getPoseTrack()).toBeNull();
     });
 
+    it('a new replay supersedes one still in flight instead of interleaving', async () => {
+      // Overriding the exercise while the initial replay still has chunks
+      // queued used to leave BOTH running: the analyzer saw frames 500-999
+      // interleaved with 0-499, producing duplicate and missing reps, and each
+      // run emitted its own batch-complete.
+      vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(makeTrack(600));
+      const source = makeSource();
+      const states: SkeletonSourceState[] = [];
+      const skeletons: unknown[] = [];
+      source.state$.subscribe((s) => states.push(s));
+
+      await source.start();
+      await flushTimers(); // initial replay emits chunk 1 of 2
+
+      source.skeletons$.subscribe((e) => skeletons.push(e));
+      source.replayCachedFrames(); // override lands mid-replay
+      await flushTimers();
+      await flushTimers();
+
+      // Exactly one full pass of 600, not 100 leftovers plus 600.
+      expect(skeletons).toHaveLength(600);
+      const completions = states.filter((s) => 'batch' in s && s.batch);
+      expect(completions).toHaveLength(1);
+    });
+
     it('reports replay feasibility before any state is discarded', async () => {
       // The caller must be able to ask WITHOUT committing: it clears the rep
       // count, gallery and the pipeline's stale-analysis flag before replaying,
@@ -440,21 +465,24 @@ describe('VideoFileSkeletonSource', () => {
       expect(extractPosesFromVideo).not.toHaveBeenCalled();
     });
 
-    it('does not stamp a measurement that disagrees, so a cleaner one can re-judge', async () => {
-      // The estimator samples 12 frames from a hidden, playing element; dropped
-      // presentations read LOW. Stamping on such a reading would exempt the
-      // track from every future audit on the strength of one noisy sample.
+    it('stamps a slower-than-recorded source so it is not re-audited forever', async () => {
+      // A 24/25fps video written by the old 30fps-assuming extractor measures
+      // BELOW its recorded fps. That is not under-sampling, so the cache is
+      // kept — and the audit must be recorded as done, or every future cache
+      // hit pays the hidden-video measurement again for the life of the track.
       const legacy = makeTrack(3, { fps: 30, fpsMeasured: undefined });
       vi.mocked(loadPoseTrackFromStorage).mockResolvedValue(legacy);
-      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(15);
+      vi.mocked(measureVideoFpsFromFile).mockResolvedValue(24);
 
       const source = makeSource();
       await source.start();
       await flushTimers();
 
       expect(extractPosesFromVideo).not.toHaveBeenCalled();
-      expect(source.getPoseTrack()?.metadata.fpsMeasured).toBeUndefined();
-      expect(savePoseTrackToStorage).not.toHaveBeenCalled();
+      expect(source.getPoseTrack()?.metadata.fpsMeasured).toBe(true);
+      expect(savePoseTrackToStorage).toHaveBeenCalled();
+      // fps itself is never rewritten: the frames really are 1/30 apart.
+      expect(source.getPoseTrack()?.metadata.fps).toBe(30);
     });
 
     it('keeps the cache when measurement fails rather than discarding good data', async () => {

@@ -155,6 +155,21 @@ describe('Pipeline error contract', () => {
       expect(pipeline.needsReanalysis()).toBe(false);
     });
 
+    it('acknowledgeStaleAnalysis drops the flag but keeps the scores', () => {
+      // Used when a re-score is DECLINED. prepareForReanalysis would zero the
+      // rep count, leaving the pipeline at 0 while the UI still shows the reps
+      // it already rendered — a decline must change nothing the user can see.
+      const pipeline = build([4]);
+      pipeline.processSkeletonEvent(makeSkeletonEvent());
+      pipeline.setExerciseType('pistol-squat');
+      expect(pipeline.needsReanalysis()).toBe(true);
+
+      pipeline.acknowledgeStaleAnalysis();
+
+      expect(pipeline.needsReanalysis()).toBe(false);
+      expect(pipeline.getRepCount()).toBe(4);
+    });
+
     it('prepareForReanalysis clears the flag and the rep count without unlocking detection', () => {
       const pipeline = build([3]);
       pipeline.processSkeletonEvent(makeSkeletonEvent());

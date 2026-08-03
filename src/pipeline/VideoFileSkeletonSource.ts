@@ -79,6 +79,12 @@ export class VideoFileSkeletonSource implements SkeletonSource {
   // currently constructs a fresh source per video, so same-instance
   // restart is only reachable through direct API use (and the tests).
   private generation = 0;
+  /**
+   * Bumped per emit run (initial cached pass or a re-score). `generation`
+   * only moves on start(), so it cannot tell two replays of the SAME video
+   * apart — which is exactly the case an exercise override creates.
+   */
+  private replayEpoch = 0;
 
   private readonly videoFile: File;
   private readonly autoExtract: boolean;
@@ -174,14 +180,16 @@ export class VideoFileSkeletonSource implements SkeletonSource {
       return false;
     }
 
-    // Only stamp on a close agreement. A reading well below the recorded fps
-    // keeps the cache but stays unstamped, so a later, cleaner measurement can
-    // still catch a track this one was too noisy to judge.
-    const agrees = Math.abs(measuredFps - recordedFps) <= recordedFps * 0.1;
-    if (!agrees) {
-      return true;
-    }
-
+    // The measurement succeeded and did not indicate under-sampling, so the
+    // audit is done: stamp it. Requiring close agreement instead meant a
+    // legitimately slower source — a 24 or 25fps video written by the old
+    // 30fps-assuming extractor — could never be stamped and paid the hidden
+    // video measurement on every single cache hit, forever.
+    //
+    // The stamp records only that the check ran; it never rewrites `fps`, and
+    // the track stays correct either way because its frames really are spaced
+    // at 1/recorded. The cost of a spuriously low reading is therefore a
+    // missed future audit, not corrupted data.
     cached.metadata.fpsMeasured = true;
     try {
       await savePoseTrackToStorage(cached);
@@ -200,14 +208,26 @@ export class VideoFileSkeletonSource implements SkeletonSource {
    * then signal batch completion.
    *
    * Every emission synchronously drives the form analyzer and React state, so
-   * this must not run as one task; the guard is re-checked per chunk so a
-   * stop() or a newer start() halts a replay already in flight.
+   * this must not run as one task; the guards are re-checked per chunk so a
+   * stop(), a newer start(), or a newer replay halts one already in flight.
+   *
+   * Starting a run supersedes any earlier one. Without that, overriding the
+   * exercise while the initial replay still had chunks queued left BOTH
+   * running: the analyzer saw frames 500-999 interleaved with 0-499 and
+   * produced duplicate/missing reps, and each run emitted its own
+   * batch-complete.
    */
   private emitFramesInChunks(
     frames: ExtractionFrame[],
-    generation: number
+    generation: number,
+    epoch: number
   ): void {
-    if (this.stopped || generation !== this.generation) {
+    const isCurrent = () =>
+      !this.stopped &&
+      generation === this.generation &&
+      epoch === this.replayEpoch;
+
+    if (!isCurrent()) {
       return;
     }
 
@@ -216,7 +236,7 @@ export class VideoFileSkeletonSource implements SkeletonSource {
     let emitCount = 0;
 
     const emitChunk = () => {
-      if (this.stopped || generation !== this.generation) {
+      if (!isCurrent()) {
         return;
       }
 
@@ -288,8 +308,12 @@ export class VideoFileSkeletonSource implements SkeletonSource {
     }
 
     const generation = this.generation;
+    // Bump at SCHEDULE time: a chunk the previous run already queued would
+    // otherwise still be current when it fires and would interleave its
+    // remaining frames with this one's.
+    const epoch = ++this.replayEpoch;
     setTimeout(() => {
-      this.emitFramesInChunks(frames, generation);
+      this.emitFramesInChunks(frames, generation, epoch);
     }, 0);
     return true;
   }
@@ -398,8 +422,9 @@ export class VideoFileSkeletonSource implements SkeletonSource {
           cached.frames.length,
           'cached skeleton events'
         );
+        const replayEpoch = ++this.replayEpoch;
         setTimeout(() => {
-          this.emitFramesInChunks(cached.frames, generation);
+          this.emitFramesInChunks(cached.frames, generation, replayEpoch);
         }, 0);
 
         return;
