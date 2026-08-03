@@ -4,21 +4,6 @@ import type { TimestampMs, VideoTimeSeconds } from '../utils/brandedTypes';
 import type { PoseEvent } from './PoseSkeletonTransformer';
 
 /**
- * Frame acquisition stage - owns the frame source element.
- *
- * Down to a single method since the streaming path was deleted, and Pipeline
- * holds one only to reach VideoFrameAcquisition's crop state via instanceof.
- * Whether this abstraction should survive is tracked in swing-w2k6 — decide
- * there rather than deleting it ad hoc.
- */
-export interface FrameAcquisition {
-  /**
-   * Get the current frame
-   */
-  getCurrentFrame(): HTMLCanvasElement | HTMLVideoElement;
-}
-
-/**
  * A frame event with the source element and timestamp
  */
 export interface FrameEvent {

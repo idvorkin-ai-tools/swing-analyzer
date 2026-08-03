@@ -18,17 +18,7 @@ import {
   asVideoTimeSeconds,
 } from '../utils/brandedTypes';
 import { Pipeline, type PipelineError } from './Pipeline';
-import type {
-  FrameAcquisition,
-  SkeletonEvent,
-  SkeletonTransformer,
-} from './PipelineInterfaces';
-
-function makeFrameAcquisition(): FrameAcquisition {
-  return {
-    getCurrentFrame: () => ({}) as HTMLCanvasElement,
-  };
-}
+import type { SkeletonEvent, SkeletonTransformer } from './PipelineInterfaces';
 
 const fakeTransformer = {
   initialize: async () => {},
@@ -89,11 +79,7 @@ describe('Pipeline error contract', () => {
   });
 
   function build(script: Array<number | 'throw'>) {
-    const pipeline = new Pipeline(
-      makeFrameAcquisition(),
-      fakeTransformer,
-      makeAnalyzer(script)
-    );
+    const pipeline = new Pipeline(fakeTransformer, makeAnalyzer(script));
     // Lock detection so the fake skeleton never reaches ExerciseDetector
     // (the stub names itself Kettlebell Swing, so the analyzer is kept).
     pipeline.setExerciseType('kettlebell-swing');

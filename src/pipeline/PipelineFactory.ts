@@ -6,13 +6,8 @@ import { asTimestampMs, asVideoTimeSeconds } from '../utils/brandedTypes';
 import { CachedPoseSkeletonTransformer } from './CachedPoseSkeletonTransformer';
 import type { LivePoseCache } from './LivePoseCache';
 import { Pipeline } from './Pipeline';
-import type {
-  FrameAcquisition,
-  SkeletonEvent,
-  SkeletonTransformer,
-} from './PipelineInterfaces';
+import type { SkeletonEvent, SkeletonTransformer } from './PipelineInterfaces';
 import { PoseSkeletonTransformer } from './PoseSkeletonTransformer';
-import { VideoFrameAcquisition } from './VideoFrameAcquisition';
 
 /**
  * Options for pipeline creation
@@ -46,18 +41,14 @@ export interface CreatePipelineOptions {
 }
 
 /**
- * Create a complete pipeline with all components
+ * Create a complete pipeline with all components.
  *
- * @param videoElement - The video element to process
+ * Takes no video element: the pipeline analyses skeletons that a source has
+ * already produced, and never touches the media itself.
+ *
  * @param options - Optional configuration including cached pose data
  */
-export function createPipeline(
-  videoElement: HTMLVideoElement,
-  options: CreatePipelineOptions = {}
-): Pipeline {
-  // Create each pipeline stage
-  const frameAcquisition = createFrameAcquisition(videoElement);
-
+export function createPipeline(options: CreatePipelineOptions = {}): Pipeline {
   // Choose skeleton transformer based on available cache options
   let skeletonTransformer: SkeletonTransformer;
 
@@ -77,20 +68,7 @@ export function createPipeline(
   }
 
   // Create the pipeline with optional custom analyzer
-  return new Pipeline(
-    frameAcquisition,
-    skeletonTransformer,
-    options.formAnalyzer
-  );
-}
-
-/**
- * Create a frame acquisition component
- */
-export function createFrameAcquisition(
-  videoElement: HTMLVideoElement
-): FrameAcquisition {
-  return new VideoFrameAcquisition(videoElement);
+  return new Pipeline(skeletonTransformer, options.formAnalyzer);
 }
 
 /**

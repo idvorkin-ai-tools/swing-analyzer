@@ -1,5 +1,12 @@
 # Instant Filmstrip: Stream from Extraction
 
+> **Historical requirements doc — shipped.** The "currently" sections below
+> describe the code as it was when this was written. Several of the named
+> pieces no longer exist: `VideoFrameAcquisition` was deleted once crop became
+> a pure viewport concern, and `FormProcessor`/`RepProcessor` were never
+> implemented (the `FormAnalyzer` plugin system replaced them). See
+> `docs/ARCHITECTURE.md` for the current flow.
+
 ## User Story
 
 **As a user, I want to see my rep analysis immediately after loading a video, without having to press play.**

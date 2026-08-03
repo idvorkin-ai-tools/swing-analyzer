@@ -528,7 +528,7 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   const initializePipeline = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return null;
 
-    const pipeline = createPipeline(videoRef.current);
+    const pipeline = createPipeline();
 
     // Initialize thumbnail queue for lazy generation from cached pose tracks
     // Uses a hidden video element to avoid affecting main playback
@@ -877,10 +877,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
                 asVideoWidth(videoWidth),
                 asVideoHeight(videoHeight)
               );
+              // Crop is a viewport concern only: syncCanvasToVideo applies it
+              // to the video and canvas. It is deliberately NOT pushed into
+              // the pipeline, which has no use for it.
               setCropRegionState(crop);
-              if (crop && pipelineRef.current) {
-                pipelineRef.current.setCropRegion(crop);
-              }
             }
           }
           // Check if poses exist for current frame (for HUD visibility)
@@ -1753,12 +1753,10 @@ export function useExerciseAnalyzer(initialState?: Partial<AppState>) {
   // Crop Toggle
   // ========================================
   const toggleCrop = useCallback(() => {
-    const pipeline = pipelineRef.current;
-    if (!pipeline || !cropRegion) return;
+    if (!cropRegion) return;
 
     const newEnabled = !isCropEnabled;
     setIsCropEnabled(newEnabled);
-    pipeline.setCropEnabled(newEnabled);
 
     // Re-sync canvas to match the new zoom state
     // Use requestAnimationFrame to ensure CSS has applied

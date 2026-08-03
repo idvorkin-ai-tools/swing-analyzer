@@ -10,13 +10,7 @@ import {
   type RepPosition,
 } from '../analyzers';
 import type { Skeleton } from '../models/Skeleton';
-import type { CropRegion } from '../types/posetrack';
-import type {
-  FrameAcquisition,
-  SkeletonEvent,
-  SkeletonTransformer,
-} from './PipelineInterfaces';
-import { VideoFrameAcquisition } from './VideoFrameAcquisition';
+import type { SkeletonEvent, SkeletonTransformer } from './PipelineInterfaces';
 
 /**
  * Event emitted when a rep completes with position thumbnails
@@ -74,7 +68,6 @@ export class Pipeline {
   private staleAnalysis = false;
 
   constructor(
-    private frameAcquisition: FrameAcquisition,
     private skeletonTransformer: SkeletonTransformer,
     formAnalyzer?: FormAnalyzer
   ) {
@@ -374,53 +367,10 @@ export class Pipeline {
   isExerciseDetectionLocked(): boolean {
     return this.exerciseDetector.isLocked();
   }
-
-  // ========================================
-  // Crop Region Support
-  // ========================================
-
-  /**
-   * Set the crop region for auto-centering on person
-   * Only works if frameAcquisition is a VideoFrameAcquisition
-   */
-  setCropRegion(crop: CropRegion | null): void {
-    if (this.frameAcquisition instanceof VideoFrameAcquisition) {
-      this.frameAcquisition.setCropRegion(crop);
-    }
-  }
-
-  /**
-   * Get the current crop region
-   */
-  getCropRegion(): CropRegion | null {
-    if (this.frameAcquisition instanceof VideoFrameAcquisition) {
-      return this.frameAcquisition.getCropRegion();
-    }
-    return null;
-  }
-
-  /**
-   * Enable or disable crop mode
-   */
-  setCropEnabled(enabled: boolean): void {
-    if (this.frameAcquisition instanceof VideoFrameAcquisition) {
-      this.frameAcquisition.setCropEnabled(enabled);
-    }
-  }
-
-  /**
-   * Check if crop is currently enabled
-   */
-  isCropEnabled(): boolean {
-    if (this.frameAcquisition instanceof VideoFrameAcquisition) {
-      return this.frameAcquisition.isCropEnabled();
-    }
-    return false;
-  }
 }
 
 /**
- * Result from pipeline processing (legacy Observable mode)
+ * Result from pipeline processing
  */
 export interface PipelineResult {
   skeleton: Skeleton;
